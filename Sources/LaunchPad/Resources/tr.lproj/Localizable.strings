@@ -1,0 +1,7 @@
+/* Folder titles, REF-LAYOUT-009 */
+"Other" = "Diğer";
+"Utilities" = "İzlenceler";
+"Games" = "Oyunlar";
+"TestFlight" = "TestFlight";
+"Server" = "Sunucu";
+"%@ (Other)" = "%@ (Diğer)";

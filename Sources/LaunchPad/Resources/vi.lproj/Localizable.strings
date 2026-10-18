@@ -1,0 +1,7 @@
+/* Folder titles, REF-LAYOUT-009 */
+"Other" = "Khác";
+"Utilities" = "Tiện ích";
+"Games" = "Trò chơi";
+"TestFlight" = "TestFlight";
+"Server" = "Máy chủ";
+"%@ (Other)" = "%@ (Khác)";

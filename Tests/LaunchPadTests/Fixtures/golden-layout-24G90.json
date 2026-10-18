@@ -1,0 +1,945 @@
+{
+ "source": "REF-LAYOUT-008",
+ "note": "Apps in the order the original placed them in the hidden page (items rowid order). The positions of the three dropped apps (orders 9, 18, 67) are assigned arbitrarily: they never reach the layout.",
+ "localization": "zh_CN",
+ "sourcePaths": [
+  "/System/Applications",
+  "/Applications",
+  "/System/Volumes/Preboot/Cryptexes/App/System/Applications",
+  "/Users/shizuku/Applications",
+  "/Users/Shared",
+  "/AppleInternal/Applications"
+ ],
+ "maxPerPage": 35,
+ "maxPerGroupPage": 35,
+ "apps": [
+  {
+   "order": 7,
+   "title": "LPSubB",
+   "bundleID": "io.github.wljf817.lptest.subb",
+   "path": "/Applications/LPDir/LPSub/LPSubB.app",
+   "category": null,
+   "flags": 0
+  },
+  {
+   "order": 8,
+   "title": "Siri",
+   "bundleID": "com.apple.siri.launcher",
+   "path": "/System/Applications/Siri.app",
+   "category": "public.app-category.utilities",
+   "flags": 8
+  },
+  {
+   "order": 9,
+   "title": "Setup",
+   "bundleID": "io.github.wljf817.lptest.setup",
+   "path": "/Applications/Setup.app",
+   "category": null,
+   "flags": 0
+  },
+  {
+   "order": 10,
+   "title": "音乐",
+   "bundleID": "com.apple.Music",
+   "path": "/System/Applications/Music.app",
+   "category": "public.app-category.music",
+   "flags": 0
+  },
+  {
+   "order": 11,
+   "title": "Safari浏览器",
+   "bundleID": "com.apple.Safari",
+   "path": "/System/Volumes/Preboot/Cryptexes/App/System/Applications/Safari.app",
+   "category": "public.app-category.productivity",
+   "flags": 0
+  },
+  {
+   "order": 12,
+   "title": "LPDirA",
+   "bundleID": "io.github.wljf817.lptest.dira",
+   "path": "/Applications/LPDir/LPDirA.app",
+   "category": null,
+   "flags": 0
+  },
+  {
+   "order": 13,
+   "title": "LPUtil",
+   "bundleID": "io.github.wljf817.lptest.util",
+   "path": "/Applications/Utilities/LPUtil.app",
+   "category": null,
+   "flags": 0
+  },
+  {
+   "order": 14,
+   "title": "查找",
+   "bundleID": "com.apple.findmy",
+   "path": "/System/Applications/FindMy.app",
+   "category": null,
+   "flags": 0
+  },
+  {
+   "order": 15,
+   "title": "LPGame",
+   "bundleID": "io.github.wljf817.lptest.game",
+   "path": "/Applications/LPGame.app",
+   "category": "public.app-category.games",
+   "flags": 0
+  },
+  {
+   "order": 16,
+   "title": "LPTop",
+   "bundleID": "io.github.wljf817.lptest.top",
+   "path": "/Applications/LPTop.app",
+   "category": null,
+   "flags": 0
+  },
+  {
+   "order": 17,
+   "title": "QuickTime Player",
+   "bundleID": "com.apple.QuickTimePlayerX",
+   "path": "/System/Applications/QuickTime Player.app",
+   "category": "public.app-category.video",
+   "flags": 0
+  },
+  {
+   "order": 18,
+   "title": "LPAgent",
+   "bundleID": "io.github.wljf817.lptest.agent",
+   "path": "/Applications/LPDir/LPSub/LPAgent.app",
+   "category": null,
+   "flags": 8
+  },
+  {
+   "order": 19,
+   "title": "国际象棋",
+   "bundleID": "com.apple.Chess",
+   "path": "/System/Applications/Chess.app",
+   "category": "public.app-category.board-games",
+   "flags": 0
+  },
+  {
+   "order": 20,
+   "title": "Photo Booth",
+   "bundleID": "com.apple.PhotoBooth",
+   "path": "/System/Applications/Photo Booth.app",
+   "category": "public.app-category.entertainment",
+   "flags": 0
+  },
+  {
+   "order": 21,
+   "title": "图书",
+   "bundleID": "com.apple.iBooksX",
+   "path": "/System/Applications/Books.app",
+   "category": "public.app-category.books",
+   "flags": 0
+  },
+  {
+   "order": 22,
+   "title": "天气",
+   "bundleID": "com.apple.weather",
+   "path": "/System/Applications/Weather.app",
+   "category": null,
+   "flags": 0
+  },
+  {
+   "order": 23,
+   "title": "备忘录",
+   "bundleID": "com.apple.Notes",
+   "path": "/System/Applications/Notes.app",
+   "category": "public.app-category.productivity",
+   "flags": 0
+  },
+  {
+   "order": 24,
+   "title": "图像捕捉",
+   "bundleID": "com.apple.Image_Capture",
+   "path": "/System/Applications/Image Capture.app",
+   "category": "public.app-category.utilities",
+   "flags": 0
+  },
+  {
+   "order": 25,
+   "title": "家庭",
+   "bundleID": "com.apple.Home",
+   "path": "/System/Applications/Home.app",
+   "category": null,
+   "flags": 0
+  },
+  {
+   "order": 26,
+   "title": "无边记",
+   "bundleID": "com.apple.freeform",
+   "path": "/System/Applications/Freeform.app",
+   "category": "public.app-category.productivity",
+   "flags": 0
+  },
+  {
+   "order": 27,
+   "title": "密码",
+   "bundleID": "com.apple.Passwords",
+   "path": "/System/Applications/Passwords.app",
+   "category": null,
+   "flags": 0
+  },
+  {
+   "order": 28,
+   "title": "预览",
+   "bundleID": "com.apple.Preview",
+   "path": "/System/Applications/Preview.app",
+   "category": "public.app-category.productivity",
+   "flags": 0
+  },
+  {
+   "order": 29,
+   "title": "News",
+   "bundleID": "com.apple.news",
+   "path": "/System/Applications/News.app",
+   "category": "public.app-category.news",
+   "flags": 0
+  },
+  {
+   "order": 30,
+   "title": "文本编辑",
+   "bundleID": "com.apple.TextEdit",
+   "path": "/System/Applications/TextEdit.app",
+   "category": "public.app-category.productivity",
+   "flags": 0
+  },
+  {
+   "order": 31,
+   "title": "播客",
+   "bundleID": "com.apple.podcasts",
+   "path": "/System/Applications/Podcasts.app",
+   "category": null,
+   "flags": 0
+  },
+  {
+   "order": 32,
+   "title": "系统设置",
+   "bundleID": "com.apple.systempreferences",
+   "path": "/System/Applications/System Settings.app",
+   "category": "public.app-category.utilities",
+   "flags": 0
+  },
+  {
+   "order": 33,
+   "title": "TV",
+   "bundleID": "com.apple.TV",
+   "path": "/System/Applications/TV.app",
+   "category": "public.app-category.video",
+   "flags": 0
+  },
+  {
+   "order": 34,
+   "title": "股市",
+   "bundleID": "com.apple.stocks",
+   "path": "/System/Applications/Stocks.app",
+   "category": null,
+   "flags": 0
+  },
+  {
+   "order": 35,
+   "title": "邮件",
+   "bundleID": "com.apple.mail",
+   "path": "/System/Applications/Mail.app",
+   "category": "public.app-category.productivity",
+   "flags": 0
+  },
+  {
+   "order": 36,
+   "title": "词典",
+   "bundleID": "com.apple.Dictionary",
+   "path": "/System/Applications/Dictionary.app",
+   "category": "public.app-category.reference",
+   "flags": 0
+  },
+  {
+   "order": 37,
+   "title": "通讯录",
+   "bundleID": "com.apple.AddressBook",
+   "path": "/System/Applications/Contacts.app",
+   "category": "public.app-category.productivity",
+   "flags": 0
+  },
+  {
+   "order": 38,
+   "title": "时间机器",
+   "bundleID": "com.apple.backup.launcher",
+   "path": "/System/Applications/Time Machine.app",
+   "category": "public.app-category.utilities",
+   "flags": 8
+  },
+  {
+   "order": 39,
+   "title": "AirPort实用工具",
+   "bundleID": "com.apple.airport.airportutility",
+   "path": "/System/Applications/Utilities/AirPort Utility.app",
+   "category": "public.app-category.utilities",
+   "flags": 0
+  },
+  {
+   "order": 40,
+   "title": "旁白实用工具",
+   "bundleID": "com.apple.VoiceOverUtility",
+   "path": "/System/Applications/Utilities/VoiceOver Utility.app",
+   "category": "public.app-category.utilities",
+   "flags": 0
+  },
+  {
+   "order": 41,
+   "title": "终端",
+   "bundleID": "com.apple.Terminal",
+   "path": "/System/Applications/Utilities/Terminal.app",
+   "category": "public.app-category.utilities",
+   "flags": 0
+  },
+  {
+   "order": 42,
+   "title": "活动监视器",
+   "bundleID": "com.apple.ActivityMonitor",
+   "path": "/System/Applications/Utilities/Activity Monitor.app",
+   "category": "public.app-category.utilities",
+   "flags": 0
+  },
+  {
+   "order": 43,
+   "title": "截屏",
+   "bundleID": "com.apple.screenshot.launcher",
+   "path": "/System/Applications/Utilities/Screenshot.app",
+   "category": "public.app-category.utilities",
+   "flags": 8
+  },
+  {
+   "order": 44,
+   "title": "Grapher",
+   "bundleID": "com.apple.grapher",
+   "path": "/System/Applications/Utilities/Grapher.app",
+   "category": "public.app-category.education",
+   "flags": 0
+  },
+  {
+   "order": 45,
+   "title": "音频MIDI设置",
+   "bundleID": "com.apple.audio.AudioMIDISetup",
+   "path": "/System/Applications/Utilities/Audio MIDI Setup.app",
+   "category": "public.app-category.utilities",
+   "flags": 0
+  },
+  {
+   "order": 46,
+   "title": "屏幕共享",
+   "bundleID": "com.apple.ScreenSharing",
+   "path": "/System/Applications/Utilities/Screen Sharing.app",
+   "category": "public.app-category.utilities",
+   "flags": 0
+  },
+  {
+   "order": 47,
+   "title": "系统信息",
+   "bundleID": "com.apple.SystemProfiler",
+   "path": "/System/Applications/Utilities/System Information.app",
+   "category": "public.app-category.utilities",
+   "flags": 8
+  },
+  {
+   "order": 48,
+   "title": "打印中心",
+   "bundleID": "com.apple.printcenter",
+   "path": "/System/Applications/Utilities/Print Center.app",
+   "category": "public.app-category.utilities",
+   "flags": 0
+  },
+  {
+   "order": 49,
+   "title": "迁移助理",
+   "bundleID": "com.apple.MigrateAssistant",
+   "path": "/System/Applications/Utilities/Migration Assistant.app",
+   "category": "public.app-category.utilities",
+   "flags": 0
+  },
+  {
+   "order": 50,
+   "title": "脚本编辑器",
+   "bundleID": "com.apple.ScriptEditor2",
+   "path": "/System/Applications/Utilities/Script Editor.app",
+   "category": "public.app-category.utilities",
+   "flags": 0
+  },
+  {
+   "order": 51,
+   "title": "色彩同步实用工具",
+   "bundleID": "com.apple.ColorSyncUtility",
+   "path": "/System/Applications/Utilities/ColorSync Utility.app",
+   "category": "public.app-category.productivity",
+   "flags": 0
+  },
+  {
+   "order": 52,
+   "title": "控制台",
+   "bundleID": "com.apple.Console",
+   "path": "/System/Applications/Utilities/Console.app",
+   "category": "public.app-category.utilities",
+   "flags": 0
+  },
+  {
+   "order": 53,
+   "title": "磁盘工具",
+   "bundleID": "com.apple.DiskUtility",
+   "path": "/System/Applications/Utilities/Disk Utility.app",
+   "category": null,
+   "flags": 0
+  },
+  {
+   "order": 54,
+   "title": "蓝牙文件交换",
+   "bundleID": "com.apple.BluetoothFileExchange",
+   "path": "/System/Applications/Utilities/Bluetooth File Exchange.app",
+   "category": "public.app-category.utilities",
+   "flags": 0
+  },
+  {
+   "order": 55,
+   "title": "数码测色计",
+   "bundleID": "com.apple.DigitalColorMeter",
+   "path": "/System/Applications/Utilities/Digital Color Meter.app",
+   "category": "public.app-category.productivity",
+   "flags": 0
+  },
+  {
+   "order": 56,
+   "title": "字体册",
+   "bundleID": "com.apple.FontBook",
+   "path": "/System/Applications/Font Book.app",
+   "category": "public.app-category.utilities",
+   "flags": 0
+  },
+  {
+   "order": 57,
+   "title": "FaceTime通话",
+   "bundleID": "com.apple.FaceTime",
+   "path": "/System/Applications/FaceTime.app",
+   "category": "public.app-category.social-networking",
+   "flags": 128
+  },
+  {
+   "order": 58,
+   "title": "快捷指令",
+   "bundleID": "com.apple.shortcuts",
+   "path": "/System/Applications/Shortcuts.app",
+   "category": "public.app-category.utilities",
+   "flags": 128
+  },
+  {
+   "order": 59,
+   "title": "地图",
+   "bundleID": "com.apple.Maps",
+   "path": "/System/Applications/Maps.app",
+   "category": "public.app-category.travel",
+   "flags": 0
+  },
+  {
+   "order": 60,
+   "title": "调度中心",
+   "bundleID": "com.apple.exposelauncher",
+   "path": "/System/Applications/Mission Control.app",
+   "category": "public.app-category.utilities",
+   "flags": 8
+  },
+  {
+   "order": 61,
+   "title": "便笺",
+   "bundleID": "com.apple.Stickies",
+   "path": "/System/Applications/Stickies.app",
+   "category": "public.app-category.productivity",
+   "flags": 0
+  },
+  {
+   "order": 62,
+   "title": "照片",
+   "bundleID": "com.apple.Photos",
+   "path": "/System/Applications/Photos.app",
+   "category": "public.app-category.photography",
+   "flags": 0
+  },
+  {
+   "order": 63,
+   "title": "信息",
+   "bundleID": "com.apple.MobileSMS",
+   "path": "/System/Applications/Messages.app",
+   "category": "public.app-category.social-networking",
+   "flags": 0
+  },
+  {
+   "order": 64,
+   "title": "iPhone镜像",
+   "bundleID": "com.apple.ScreenContinuity",
+   "path": "/System/Applications/iPhone Mirroring.app",
+   "category": null,
+   "flags": 128
+  },
+  {
+   "order": 65,
+   "title": "计算器",
+   "bundleID": "com.apple.calculator",
+   "path": "/System/Applications/Calculator.app",
+   "category": null,
+   "flags": 0
+  },
+  {
+   "order": 66,
+   "title": "语音备忘录",
+   "bundleID": "com.apple.VoiceMemos",
+   "path": "/System/Applications/VoiceMemos.app",
+   "category": "public.app-category.utilities",
+   "flags": 0
+  },
+  {
+   "order": 67,
+   "title": "启动台",
+   "bundleID": "com.apple.launchpad.launcher",
+   "path": "/System/Applications/Launchpad.app",
+   "category": null,
+   "flags": 0
+  },
+  {
+   "order": 68,
+   "title": "提醒事项",
+   "bundleID": "com.apple.reminders",
+   "path": "/System/Applications/Reminders.app",
+   "category": "public.app-category.productivity",
+   "flags": 0
+  },
+  {
+   "order": 69,
+   "title": "App Store",
+   "bundleID": "com.apple.AppStore",
+   "path": "/System/Applications/App Store.app",
+   "category": "public.app-category.utilities",
+   "flags": 128
+  },
+  {
+   "order": 70,
+   "title": "时钟",
+   "bundleID": "com.apple.clock",
+   "path": "/System/Applications/Clock.app",
+   "category": null,
+   "flags": 128
+  },
+  {
+   "order": 71,
+   "title": "自动操作",
+   "bundleID": "com.apple.Automator",
+   "path": "/System/Applications/Automator.app",
+   "category": "public.app-category.utilities",
+   "flags": 0
+  },
+  {
+   "order": 72,
+   "title": "提示",
+   "bundleID": "com.apple.helpviewer",
+   "path": "/System/Applications/Tips.app",
+   "category": "public.app-category.education",
+   "flags": 0
+  },
+  {
+   "order": 73,
+   "title": "日历",
+   "bundleID": "com.apple.iCal",
+   "path": "/System/Applications/Calendar.app",
+   "category": "public.app-category.productivity",
+   "flags": 128
+  }
+ ],
+ "firstLaunch": {
+  "pages": [
+   [
+    {
+     "app": "com.apple.AppStore",
+     "title": "App Store"
+    },
+    {
+     "app": "com.apple.Safari",
+     "title": "Safari浏览器"
+    },
+    {
+     "app": "com.apple.mail",
+     "title": "邮件"
+    },
+    {
+     "app": "com.apple.AddressBook",
+     "title": "通讯录"
+    },
+    {
+     "app": "com.apple.iCal",
+     "title": "日历"
+    },
+    {
+     "app": "com.apple.reminders",
+     "title": "提醒事项"
+    },
+    {
+     "app": "com.apple.Notes",
+     "title": "备忘录"
+    },
+    {
+     "app": "com.apple.FaceTime",
+     "title": "FaceTime通话"
+    },
+    {
+     "app": "com.apple.MobileSMS",
+     "title": "信息"
+    },
+    {
+     "app": "com.apple.Maps",
+     "title": "地图"
+    },
+    {
+     "app": "com.apple.findmy",
+     "title": "查找"
+    },
+    {
+     "app": "com.apple.PhotoBooth",
+     "title": "Photo Booth"
+    },
+    {
+     "app": "com.apple.Photos",
+     "title": "照片"
+    },
+    {
+     "app": "com.apple.Music",
+     "title": "音乐"
+    },
+    {
+     "app": "com.apple.podcasts",
+     "title": "播客"
+    },
+    {
+     "app": "com.apple.TV",
+     "title": "TV"
+    },
+    {
+     "app": "com.apple.VoiceMemos",
+     "title": "语音备忘录"
+    },
+    {
+     "app": "com.apple.weather",
+     "title": "天气"
+    },
+    {
+     "app": "com.apple.news",
+     "title": "News"
+    },
+    {
+     "app": "com.apple.stocks",
+     "title": "股市"
+    },
+    {
+     "app": "com.apple.iBooksX",
+     "title": "图书"
+    },
+    {
+     "app": "com.apple.clock",
+     "title": "时钟"
+    },
+    {
+     "app": "com.apple.calculator",
+     "title": "计算器"
+    },
+    {
+     "app": "com.apple.freeform",
+     "title": "无边记"
+    },
+    {
+     "app": "com.apple.Home",
+     "title": "家庭"
+    },
+    {
+     "app": "com.apple.siri.launcher",
+     "title": "Siri"
+    },
+    {
+     "app": "com.apple.ScreenContinuity",
+     "title": "iPhone镜像"
+    },
+    {
+     "app": "com.apple.Passwords",
+     "title": "密码"
+    },
+    {
+     "app": "com.apple.systempreferences",
+     "title": "系统设置"
+    },
+    {
+     "folder": "其他",
+     "flags": 1,
+     "pages": [
+      [
+       "com.apple.shortcuts",
+       "com.apple.QuickTimePlayerX",
+       "com.apple.Dictionary",
+       "com.apple.TextEdit",
+       "com.apple.FontBook",
+       "com.apple.ScreenSharing",
+       "com.apple.exposelauncher",
+       "com.apple.backup.launcher",
+       "com.apple.Preview",
+       "com.apple.screenshot.launcher",
+       "com.apple.Image_Capture",
+       "com.apple.DigitalColorMeter",
+       "com.apple.ColorSyncUtility",
+       "com.apple.Stickies",
+       "com.apple.grapher",
+       "com.apple.VoiceOverUtility",
+       "com.apple.printcenter",
+       "com.apple.Automator",
+       "com.apple.ScriptEditor2",
+       "com.apple.audio.AudioMIDISetup",
+       "com.apple.BluetoothFileExchange",
+       "com.apple.DiskUtility",
+       "com.apple.SystemProfiler",
+       "com.apple.ActivityMonitor",
+       "com.apple.Console",
+       "com.apple.Terminal",
+       "com.apple.airport.airportutility",
+       "com.apple.MigrateAssistant",
+       "com.apple.helpviewer",
+       "io.github.wljf817.lptest.util"
+      ]
+     ]
+    },
+    {
+     "folder": "游戏",
+     "flags": 5,
+     "pages": [
+      [
+       "com.apple.Chess",
+       "io.github.wljf817.lptest.game"
+      ]
+     ]
+    }
+   ],
+   [
+    {
+     "app": "io.github.wljf817.lptest.dira",
+     "title": "LPDirA"
+    },
+    {
+     "folder": "LPDir（其他）",
+     "flags": 1,
+     "pages": [
+      [
+       "io.github.wljf817.lptest.subb"
+      ]
+     ]
+    },
+    {
+     "app": "io.github.wljf817.lptest.top",
+     "title": "LPTop"
+    }
+   ]
+  ],
+  "dbinfo": {
+   "curateListVersionLP": "1",
+   "excludeListVersionLP": "3",
+   "includeAsGameListVersionLP": "1",
+   "UpdatedForROSP": "1",
+   "UpdatedForiTunesSplit": "1"
+  }
+ },
+ "secondLaunch": {
+  "pages": [
+   [
+    {
+     "app": "com.apple.AppStore",
+     "title": "App Store"
+    },
+    {
+     "app": "com.apple.Safari",
+     "title": "Safari浏览器"
+    },
+    {
+     "app": "com.apple.mail",
+     "title": "邮件"
+    },
+    {
+     "app": "com.apple.AddressBook",
+     "title": "通讯录"
+    },
+    {
+     "app": "com.apple.iCal",
+     "title": "日历"
+    },
+    {
+     "app": "com.apple.reminders",
+     "title": "提醒事项"
+    },
+    {
+     "app": "com.apple.Notes",
+     "title": "备忘录"
+    },
+    {
+     "app": "com.apple.FaceTime",
+     "title": "FaceTime通话"
+    },
+    {
+     "app": "com.apple.MobileSMS",
+     "title": "信息"
+    },
+    {
+     "app": "com.apple.Maps",
+     "title": "地图"
+    },
+    {
+     "app": "com.apple.findmy",
+     "title": "查找"
+    },
+    {
+     "app": "com.apple.PhotoBooth",
+     "title": "Photo Booth"
+    },
+    {
+     "app": "com.apple.Photos",
+     "title": "照片"
+    },
+    {
+     "app": "com.apple.Music",
+     "title": "音乐"
+    },
+    {
+     "app": "com.apple.podcasts",
+     "title": "播客"
+    },
+    {
+     "app": "com.apple.TV",
+     "title": "TV"
+    },
+    {
+     "app": "com.apple.VoiceMemos",
+     "title": "语音备忘录"
+    },
+    {
+     "app": "com.apple.weather",
+     "title": "天气"
+    },
+    {
+     "app": "com.apple.news",
+     "title": "News"
+    },
+    {
+     "app": "com.apple.stocks",
+     "title": "股市"
+    },
+    {
+     "app": "com.apple.iBooksX",
+     "title": "图书"
+    },
+    {
+     "app": "com.apple.clock",
+     "title": "时钟"
+    },
+    {
+     "app": "com.apple.calculator",
+     "title": "计算器"
+    },
+    {
+     "app": "com.apple.freeform",
+     "title": "无边记"
+    },
+    {
+     "app": "com.apple.Home",
+     "title": "家庭"
+    },
+    {
+     "app": "com.apple.siri.launcher",
+     "title": "Siri"
+    },
+    {
+     "app": "com.apple.ScreenContinuity",
+     "title": "iPhone镜像"
+    },
+    {
+     "app": "com.apple.Passwords",
+     "title": "密码"
+    },
+    {
+     "app": "com.apple.systempreferences",
+     "title": "系统设置"
+    },
+    {
+     "folder": "其他",
+     "flags": 1,
+     "pages": [
+      [
+       "com.apple.shortcuts",
+       "com.apple.QuickTimePlayerX",
+       "com.apple.Dictionary",
+       "com.apple.TextEdit",
+       "com.apple.FontBook",
+       "com.apple.ScreenSharing",
+       "com.apple.exposelauncher",
+       "com.apple.backup.launcher",
+       "com.apple.Preview",
+       "com.apple.screenshot.launcher",
+       "com.apple.Image_Capture",
+       "com.apple.DigitalColorMeter",
+       "com.apple.ColorSyncUtility",
+       "com.apple.Stickies",
+       "com.apple.grapher",
+       "com.apple.VoiceOverUtility",
+       "com.apple.printcenter",
+       "com.apple.Automator",
+       "com.apple.ScriptEditor2",
+       "com.apple.audio.AudioMIDISetup",
+       "com.apple.BluetoothFileExchange",
+       "com.apple.DiskUtility",
+       "com.apple.SystemProfiler",
+       "com.apple.ActivityMonitor",
+       "com.apple.Console",
+       "com.apple.Terminal",
+       "com.apple.airport.airportutility",
+       "com.apple.MigrateAssistant",
+       "com.apple.helpviewer",
+       "io.github.wljf817.lptest.util"
+      ]
+     ]
+    },
+    {
+     "folder": "游戏",
+     "flags": 5,
+     "pages": [
+      [
+       "com.apple.Chess",
+       "io.github.wljf817.lptest.game"
+      ]
+     ]
+    }
+   ],
+   [
+    {
+     "app": "io.github.wljf817.lptest.dira",
+     "title": "LPDirA"
+    },
+    {
+     "folder": "LPDir（其他）",
+     "flags": 1,
+     "pages": [
+      [
+       "io.github.wljf817.lptest.subb"
+      ]
+     ]
+    },
+    {
+     "app": "io.github.wljf817.lptest.top",
+     "title": "LPTop"
+    }
+   ]
+  ],
+  "dbinfo": {
+   "curateListVersionLP": "8",
+   "excludeListVersionLP": "5",
+   "includeAsGameListVersionLP": "2",
+   "UpdatedForROSP": "1",
+   "UpdatedForiTunesSplit": "1"
+  }
+ }
+}

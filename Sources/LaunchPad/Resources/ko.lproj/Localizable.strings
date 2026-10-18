@@ -1,0 +1,7 @@
+/* Folder titles, REF-LAYOUT-009 */
+"Other" = "기타";
+"Utilities" = "유틸리티";
+"Games" = "게임";
+"TestFlight" = "TestFlight";
+"Server" = "서버";
+"%@ (Other)" = "%@(기타)";
