@@ -25,6 +25,7 @@ let package = Package(
             linkerSettings: [
                 .linkedFramework("QuartzCore"),
                 .linkedFramework("ApplicationServices"),
+                .linkedFramework("CoreText"),
                 // SLSTransaction* are only exported by the private SkyLight framework.
                 .unsafeFlags(["-F/System/Library/PrivateFrameworks", "-framework", "SkyLight"]),
             ]

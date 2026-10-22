@@ -6,6 +6,7 @@
 
 #include <CoreFoundation/CoreFoundation.h>
 #include <CoreGraphics/CoreGraphics.h>
+#include <CoreText/CoreText.h>
 #include <stdint.h>
 #include <stdbool.h>
 #ifdef __OBJC__
@@ -160,6 +161,27 @@ extern NSString * const kCAFilterPlusL;
 @property (readonly) BOOL isWebApp;
 @end
 #endif
+
+// ---------------------------------------------------------------------------
+// Grid geometry (grid-geometry). Verified on macOS 26.6.2 (25G83) and macOS
+// 27.0.1 (26A434).
+
+// A UI font descriptor of a type Core Text does not make public. The label font
+// of the grid is type 105, 13 points (REF-GRID-006); the call gives
+// .SFNS-Medium with the same metrics on 15.6.1, 26.6.2 and 27.0.1.
+extern CTFontDescriptorRef _Nullable CTFontDescriptorCreateForUIType(CTFontUIFontType uiType, CGFloat size,
+                                                                     CFStringRef _Nullable language) CF_RETURNS_RETAINED;
+
+// Whether the system's user interface is right to left, when no writing
+// direction is forced by preference (REF-GRID-009).
+extern bool SLSGetSystemUIHasRTLDirectionLegacy(void);
+
+// The Dock's rectangle as the window server has it (its thickness is the height
+// at the bottom, the width at a side; 0 while it is hidden) and its position (2
+// bottom, 3 left, 4 right). The grid's room for the Dock is converted from them
+// (REF-DEV-019). HIServices' CoreDockGetRect returns the same, but keeps the
+// first answer in the process and updates it only through the event loop.
+extern CGError SLSGetDockRectWithOrientation(CGSConnectionID cid, CGRect *rect, int32_t *reason, int32_t *orientation);
 
 CF_ASSUME_NONNULL_END
 

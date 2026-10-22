@@ -7,6 +7,15 @@ import QuartzCore
 class ECPagerLayer: CALayer {
     weak var pager: ECPager?
     @objc let scrollLayer = CAScrollLayer()
+    // REF-GRID-007: 10 on each side until the controller sets them.
+    @objc var leftMargin: CGFloat = 10
+    @objc var rightMargin: CGFloat = 10
+    @objc var topMargin: CGFloat = 10
+    @objc var bottomMargin: CGFloat = 10
+    /// The page shown; 0 until paging (phase 2).
+    @objc private(set) var currentPageIndex: UInt = 0
+    /// 2 for the main grid (REF-GRID-007).
+    @objc private(set) var pagerControlVisibility = 2
     var layoutRTL = false
 
     @objc(initWithPager:layoutRTL:)

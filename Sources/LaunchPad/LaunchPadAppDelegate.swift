@@ -18,6 +18,9 @@ final class LaunchPadAppDelegate: NSObject, NSApplicationDelegate {
         // Creating the Dock's visibility controller turns auto-hide back on if a previous run left
         // it off (REF-DEV-004).
         _ = dockBar.visibilityController
+        // As Dock: the writing direction is read once, before the controller exists; the preferences
+        // are this process's (REF-GRID-009, REF-DEV-002).
+        layoutRightToLeft = writingDirectionIsRightToLeft(domain: kCFPreferencesCurrentApplication)
         // As Dock: the controller is activated during the startup and started once it has finished,
         // from the main queue (REF-GRID-001).
         let springboard = LPSpringboard()

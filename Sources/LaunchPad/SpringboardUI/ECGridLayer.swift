@@ -8,6 +8,11 @@ class ECGridLayer: CALayer {
     weak var layerSource: ECLayerSource?
     var rows = 0
     var columns = 0
+    @objc var rowHeight: UInt = 0
+    @objc var columnWidth: UInt = 0
+    /// Never set (REF-GRID-008).
+    @objc let rowSpacing: UInt = 0
+    @objc let columnSpacing: UInt = 0
     var numberOfItems: UInt = 0
     var _itemLayers = NSMutableArray(capacity: 0)
     @objc let clipLayer = CALayer()
@@ -48,8 +53,12 @@ class ECGridLayer: CALayer {
         super.init(coder: coder)
     }
 
-    /// The frames of the clip and items layers are grid geometry (1.3.2).
+    /// Sizes the clip and items layers to the grid layer, then lays out the item layers.
     @objc func layout() {
+        let bounds = bounds
+        // REF-GRID-008: the clip layer reaches 10 points higher.
+        clipLayer.frame = CGRect(x: bounds.minX, y: bounds.minY, width: bounds.width, height: bounds.height + 10)
+        itemsLayer.frame = bounds
         _layoutItemLayers()
     }
 

@@ -36,6 +36,46 @@ final class ECSBSpringboard: NSObject, ECPagerSource {
         pager.layer as! ECSBLayer
     }
 
+    // The margins and the zoom factor are the pager layer's (REF-GRID-004, REF-GRID-005).
+
+    @objc var leftMargin: CGFloat {
+        get { pager.layer.leftMargin }
+        set { pager.layer.leftMargin = newValue }
+    }
+
+    @objc var rightMargin: CGFloat {
+        get { pager.layer.rightMargin }
+        set { pager.layer.rightMargin = newValue }
+    }
+
+    @objc var topMargin: CGFloat {
+        get { pager.layer.topMargin }
+        set { pager.layer.topMargin = newValue }
+    }
+
+    @objc var bottomMargin: CGFloat {
+        get { pager.layer.bottomMargin }
+        set { pager.layer.bottomMargin = newValue }
+    }
+
+    @objc var zoomFactor: CGFloat {
+        get { layer.zoomFactor }
+        set { layer.zoomFactor = newValue }
+    }
+
+    /// The main grid's icon sizes, worked out by the pager layer's class (REF-GRID-006).
+    @objc(calculateIconSize:miniIconSize:forBounds:andScaleFactor:usingLeftMargin:rightMargin:topMargin:bottomMargin:zoomStyle:zoomFactor:withNumberOfRows:andColumns:)
+    static func calculateIconSize(_ iconSize: UnsafeMutablePointer<UInt>, miniIconSize: UnsafeMutablePointer<UInt>,
+                                  forBounds bounds: CGRect, andScaleFactor scaleFactor: Float,
+                                  usingLeftMargin leftMargin: CGFloat, rightMargin: CGFloat, topMargin: CGFloat,
+                                  bottomMargin: CGFloat, zoomStyle: Int, zoomFactor: CGFloat,
+                                  withNumberOfRows rows: UInt, andColumns columns: UInt) {
+        ECSBLayer.calculateIconSize(iconSize, miniIconSize: miniIconSize, forBounds: bounds, andScaleFactor: scaleFactor,
+                                    usingLeftMargin: leftMargin, rightMargin: rightMargin, topMargin: topMargin,
+                                    bottomMargin: bottomMargin, zoomStyle: zoomStyle, zoomFactor: zoomFactor,
+                                    withNumberOfRows: rows, andColumns: columns)
+    }
+
     /// Rebuilds the page items from the layout and makes the pager drop and remake its pages.
     @objc func invalidate() {
         let disabled = disableActions()

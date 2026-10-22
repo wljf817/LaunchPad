@@ -21,6 +21,8 @@ class Springboard: NSObject, CALayerDelegate, ECSBDataSource {
     var desktopStale = false
     var desktopLastUUID: String?
     var springboard: ECSBSpringboard!
+    var iconSize: UInt = 0
+    var miniIconSize: UInt = 0
     var appManager: LPAppManager?
     var appLayout: LPLayout?
     var rootPage: LPRoot?
@@ -58,6 +60,8 @@ class Springboard: NSObject, CALayerDelegate, ECSBDataSource {
         springboard = ECSBSpringboard(handler: self, numberOfRowsPerPage: springboardRows,
                                       numberOfColumnsPerPage: springboardColumns,
                                       scaleFactor: Float(Self.scaleFactor(of: display)), layoutRTL: layoutRightToLeft)
+        // REF-GRID-005: read once, default 0, not clamped.
+        springboard.layer.zoomStyle = Int((UserDefaults.standard.object(forKey: "springboard-zoom-style") as? NSNumber)?.int32Value ?? 0)
         layer.addSublayer(springboard.layer)
         _deferLayout = true
         let wid = window.wid()
@@ -208,13 +212,58 @@ class Springboard: NSObject, CALayerDelegate, ECSBDataSource {
         _deferLayout = deferLayout
     }
 
-    /// Lays out the overlay container, the grid and the loading indicator. The grid's frame and margins
-    /// and the icon sizes are grid geometry (1.3.2).
+    /// Lays out the overlay container; places the main grid above or beside the Dock with margins
+    /// worked out from the columns, rows and the Dock's thickness (REF-GRID-004); lays out the grid and
+    /// the loading indicator; and keeps the icon sizes for that grid (REF-GRID-006).
     @objc func layout() {
         guard !_deferLayout else { return }
         let bounds = containerWindow().convertRectFromGlobal(totalScreenBounds())
         let disabled = disableActions()
         layer.frame = bounds
+        let tileSize = dockBar.tileSize
+        let distanceTop = dockBar.distanceTop
+        let distanceBottom = dockBar.distanceBottom
+        let orientation = dockBar.barOrientation
+        let dockThickness = CGFloat((tileSize + distanceTop + distanceBottom).rounded(.up))
+        // REF-GRID-004: 30 points above the bottom, or above the Dock when it is at the bottom.
+        let showsDock = (self as! LPSpringboard).showsDock()
+        var gridFrame = CGRect.zero
+        var width: CGFloat = 0
+        if !showsDock {
+            gridFrame = CGRect(x: 0, y: 30, width: bounds.width, height: bounds.height - 30)
+            width = bounds.width
+        } else if orientation == 1 || orientation == 2 {
+            gridFrame = CGRect(x: 0, y: 30, width: bounds.width, height: bounds.height - 30)
+            width = bounds.width - dockThickness
+        } else if orientation == 0 {
+            gridFrame = CGRect(x: 0, y: dockThickness + 30, width: bounds.width, height: bounds.height - (dockThickness + 30))
+            width = bounds.width
+        }
+        let gridLayer = springboard.layer
+        let transform = gridLayer.transform
+        let identity = CATransform3DEqualToTransform(transform, CATransform3DIdentity)
+        if !identity {
+            gridLayer.transform = CATransform3DIdentity
+        }
+        gridLayer.frame = gridFrame
+        if !identity {
+            gridLayer.transform = transform
+        }
+        // REF-GRID-004: a column unit from the width, the room left above the rows, and the margins.
+        let unit = (width / CGFloat(springboardColumns * 2 + 1)).rounded(.down)
+        let room = (gridFrame.height - CGFloat(springboardRows) * (unit + 40)).rounded(.down)
+        let side = max((unit * 0.5).rounded(.down), 90)
+        let top = max((room * 0.15).rounded(.down), 35)
+        let bottom = max((room * 0.25).rounded(.down), 35)
+        if showsDock {
+            springboard.leftMargin = orientation == 1 ? side + dockThickness : side
+            springboard.rightMargin = orientation == 2 ? side + dockThickness : side
+        } else {
+            springboard.leftMargin = side
+            springboard.rightMargin = side
+        }
+        springboard.topMargin = top
+        springboard.bottomMargin = bottom
         springboard.layout()
         if let loadingLayer, loadingLayer.superlayer != nil, let loadingContainerLayer {
             // REF-GRID-002: centered, x truncated, y and size rounded up.
@@ -224,9 +273,44 @@ class Springboard: NSObject, CALayerDelegate, ECSBDataSource {
                                                  width: size.width.rounded(.up), height: size.height.rounded(.up))
             loadingLayer.frame = loadingContainerLayer.bounds
         }
+        // REF-GRID-006: the sides without the Dock; at most 512 and 128.
+        var newIconSize: UInt = 128
+        var newMiniIconSize: UInt = 32
+        ECSBSpringboard.calculateIconSize(&newIconSize, miniIconSize: &newMiniIconSize, forBounds: gridFrame,
+                                          andScaleFactor: Float(Self.scaleFactor(of: display())), usingLeftMargin: side,
+                                          rightMargin: side, topMargin: top, bottomMargin: bottom,
+                                          zoomStyle: gridLayer.zoomStyle, zoomFactor: getZoomFactorFromPrefs(),
+                                          withNumberOfRows: springboardRows, andColumns: springboardColumns)
+        newIconSize = min(newIconSize, 512)
+        newMiniIconSize = min(newMiniIconSize, 128)
         if disabled {
             CATransaction.setDisableActions(false)
         }
+        // Telling the grid that the sizes changed comes with the icons (1.3.3).
+        if iconSize != newIconSize || miniIconSize != newMiniIconSize {
+            iconSize = newIconSize
+            miniIconSize = newMiniIconSize
+        }
+    }
+
+    /// Not a preference: by the display's width, a little less when the Dock is at a side
+    /// (REF-GRID-005).
+    @objc func getZoomFactorFromPrefs() -> CGFloat {
+        let width = totalScreenBounds().width
+        let orientation = dockBar.barOrientation
+        // REF-GRID-005
+        var factor: CGFloat = 0
+        if width > 1920 {
+            factor = 0.6
+        } else if width > 1680 {
+            factor = 0.3
+        } else if width > 1440 {
+            factor = 0.2
+        }
+        if factor > 0.1, orientation != 0 {
+            factor -= 0.1
+        }
+        return factor
     }
 
     // MARK: - Loading indicator (REF-GRID-001, REF-GRID-002)
@@ -326,8 +410,8 @@ class Springboard: NSObject, CALayerDelegate, ECSBDataSource {
         _visible = visible
         if visible {
             _deferLayout = false
-            // Icon caching, the display check, the zoom and the item contents come here too (1.3.2,
-            // 1.3.3, 1.6).
+            // Icon caching, the display check and the item contents come here too (1.3.3, 1.6).
+            springboard.zoomFactor = getZoomFactorFromPrefs()  // REF-GRID-005
             layout()
         }
         _enterExitAnimation(visible, slow: slow)
@@ -533,10 +617,27 @@ func pageDimension(_ key: String, default value: Int32) -> UInt {
     return number > 1 ? UInt(min(number, 100)) : 2  // REF-LAYOUT-006
 }
 
-/// Whether the layout is right to left. Dock reads it once at startup from its writing direction and
-/// passes it to every grid class (research paper §7); the writing direction comes with the grid
-/// geometry (1.3.2).
-let layoutRightToLeft = false
+/// Whether the layout is right to left: read once at startup, before the controller is created, and
+/// passed to every grid class (REF-GRID-009).
+nonisolated(unsafe) var layoutRightToLeft = false
+
+/// The writing direction as Dock's monitor decides it (REF-GRID-009): a direction forced by
+/// preference when `AppleTextDirection` is set, otherwise the system's user interface. The preferences
+/// are read from `domain` for the current user on any host.
+func writingDirectionIsRightToLeft(domain: CFString) -> Bool {
+    func bool(_ key: String) -> Bool {
+        CFPreferencesCopyValue(key as CFString, domain, kCFPreferencesCurrentUser, kCFPreferencesAnyHost) as? Bool ?? false
+    }
+    if bool("AppleTextDirection") {
+        if bool("NSForceRightToLeftWritingDirection") {
+            return true
+        }
+        if bool("NSForceLeftToRightWritingDirection") {
+            return false
+        }
+    }
+    return SLSGetSystemUIHasRTLDirectionLegacy()
+}
 
 /// Disables implicit actions in the current transaction unless they already are; returns whether it
 /// did, so the caller can enable them again.

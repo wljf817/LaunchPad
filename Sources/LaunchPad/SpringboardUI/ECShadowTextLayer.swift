@@ -62,24 +62,28 @@ class ECShadowTextLayer: ECTextLayer {
     /// wrapped text comes with the names (1.3.3).
     override func preferredFrameSize() -> CGSize {
         let size = super.preferredFrameSize()
-        if cachedHeight == 0, let font = Self.ctFont(font, size: fontSize) {
-            cachedHeight = (CTFontGetAscent(font) + CTFontGetDescent(font) + CTFontGetLeading(font)).rounded(.up)
+        if cachedHeight == 0 {
+            cachedHeight = textHeight(font, size: fontSize)
         }
         return CGSize(width: size.width, height: cachedHeight == 0 ? size.height : cachedHeight)
     }
+}
 
-    /// The layer's `font` (a font, a graphics font or a font name) as a font of `size`.
-    static func ctFont(_ font: CFTypeRef?, size: CGFloat) -> CTFont? {
-        guard let font else { return nil }
-        switch CFGetTypeID(font) {
-        case CGFont.typeID:
-            return CTFontCreateWithGraphicsFont(font as! CGFont, size, nil, nil)
-        case CFStringGetTypeID():
-            return CTFontCreateWithName(font as! CFString, size, nil)
-        case CTFontGetTypeID():
-            return (font as! CTFont)
-        default:
-            return nil
-        }
+/// The line height of a font (a font, a graphics font or a font name) of `size`: ascent, descent and
+/// leading, rounded up; `size` itself when there is no such font. Used for the loading text
+/// (REF-GRID-002) and the names' line in the icon size (REF-GRID-006).
+func textHeight(_ font: CFTypeRef?, size: CGFloat) -> CGFloat {
+    guard let font else { return size }
+    let ctFont: CTFont
+    switch CFGetTypeID(font) {
+    case CGFont.typeID:
+        ctFont = CTFontCreateWithGraphicsFont(font as! CGFont, size, nil, nil)
+    case CFStringGetTypeID():
+        ctFont = CTFontCreateWithName(font as! CFString, size, nil)
+    case CTFontGetTypeID():
+        ctFont = font as! CTFont
+    default:
+        return size
     }
+    return (CTFontGetAscent(ctFont) + CTFontGetDescent(ctFont) + CTFontGetLeading(ctFont)).rounded(.up)
 }
