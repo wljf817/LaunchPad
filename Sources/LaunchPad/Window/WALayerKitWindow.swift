@@ -18,6 +18,8 @@ final class WALayerKitWindow: WAWindow {
     var observations: [ObjectIdentifier: [NSKeyValueObservation]] = [:]
     /// Whether a sync is registered for the current transaction's commit.
     var copySyncScheduled = false
+    /// The AppKit frames the two windows were last given.
+    var appKitFrames: (main: NSRect, strip: NSRect) = (.zero, .zero)
 
     /// The tag bits `WALayerKitWindow` adds to every window it creates (REF-ARCH-008).
     static let addedTags: UInt64 = 0x1000 | 0x80_0000 | 0x80_0000_0000_0000
@@ -28,9 +30,10 @@ final class WALayerKitWindow: WAWindow {
         super.init()
         _frame = frame
         let (main, strip) = Self.windowFrames(for: frame)
+        appKitFrames = (Self.appKitRect(main), Self.appKitRect(strip))
         // REF-DEV-003: the main window stays below the Dock's window, at level 20.
-        mainWindow = LaunchPadWindow(contentRect: Self.appKitRect(main), hosting: layer, level: 19)
-        stripWindow = LaunchPadWindow(contentRect: Self.appKitRect(strip), hosting: stripLayer, level: level)
+        mainWindow = LaunchPadWindow(contentRect: appKitFrames.main, hosting: layer, level: 19)
+        stripWindow = LaunchPadWindow(contentRect: appKitFrames.strip, hosting: stripLayer, level: level)
         var allTags = tags | Self.addedTags
         for window in [mainWindow, stripWindow] {
             guard let window else { continue }
@@ -39,14 +42,18 @@ final class WALayerKitWindow: WAWindow {
         syncCopy()
     }
 
-    /// Sets the frame (global coordinates) of both windows. Does nothing when it is unchanged.
+    /// Sets the frame (global coordinates) of both windows. Does nothing when it is unchanged and both
+    /// windows are still where it put them: unlike the original's window-server window, AppKit can move
+    /// them by itself (the strip has been found below the menu bar's area while ordered out).
     @objc(setFrame:)
     func setFrame(_ frame: CGRect) {
-        guard frame != _frame else { return }
+        guard frame != _frame || mainWindow?.frame != appKitFrames.main || stripWindow?.frame != appKitFrames.strip
+        else { return }
         _frame = frame
         let (main, strip) = Self.windowFrames(for: frame)
-        mainWindow?.setFrame(Self.appKitRect(main), display: false)
-        stripWindow?.setFrame(Self.appKitRect(strip), display: false)
+        appKitFrames = (Self.appKitRect(main), Self.appKitRect(strip))
+        mainWindow?.setFrame(appKitFrames.main, display: false)
+        stripWindow?.setFrame(appKitFrames.strip, display: false)
         copyNeedsSync()
     }
 

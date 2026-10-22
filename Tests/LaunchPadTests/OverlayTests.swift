@@ -98,6 +98,24 @@ import Testing
         #expect(rootCopy.position.y == window.layer.position.y + main.minY - strip.minY)
     }
 
+    @Test("帧没变但窗口被移走时，放回原处，副本跟着对齐")
+    func setFrameRestoresMovedWindows() throws {
+        let window = makeWindow()
+        let frame = CGDisplayBounds(CGMainDisplayID())
+        let (main, strip) = WALayerKitWindow.windowFrames(for: frame)
+        let stripWindow = try #require(window.stripWindow)
+        stripWindow.setFrameOrigin(NSPoint(x: stripWindow.frame.minX, y: stripWindow.frame.minY - 300))
+
+        window.setFrame(frame)
+        CATransaction.flush()
+
+        #expect(stripWindow.frame == WALayerKitWindow.appKitRect(strip))
+        #expect(window.mainWindow?.frame == WALayerKitWindow.appKitRect(main))
+        let rootCopy = try #require(window.stripLayer.sublayers?.first)
+        let mainFrame = try #require(window.mainWindow?.frame)
+        #expect(rootCopy.position.y == window.layer.position.y + mainFrame.minY - stripWindow.frame.minY)
+    }
+
     func makeWindow() -> WALayerKitWindow {
         let display = CGMainDisplayID()
         let window = WALayerKitWindow(frame: CGDisplayBounds(display), connection: UInt32(bitPattern: CGSMainConnectionID()),
