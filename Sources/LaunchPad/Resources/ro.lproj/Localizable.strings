@@ -5,3 +5,6 @@
 "TestFlight" = "TestFlight";
 "Server" = "Server";
 "%@ (Other)" = "%@ (Altele)";
+
+/* Loading indicator, REF-GRID-002 */
+"LAUNCH_PAD_LOADING" = "Se încarcă aplicații…";

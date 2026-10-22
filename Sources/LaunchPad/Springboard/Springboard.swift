@@ -1,13 +1,14 @@
 import AppKit
+import CoreText
 import LaunchPadPrivate
 import os
 
-/// Launchpad's controller (REF-ARCH-005, REF-ARCH-006). This change has the window, the overlay
-/// container, the background, and the open and close (REF-OVERLAY-007); the grid, events, folders
-/// and the model are later sub-phases.
+/// Launchpad's controller (REF-ARCH-005, REF-ARCH-006): the window, the overlay container, the
+/// background, the open and close (REF-OVERLAY-007), and the startup that connects the model to the
+/// grid (REF-GRID-001). It is the grid components' data source.
 @MainActor
 @objc(Springboard)
-class Springboard: NSObject, CALayerDelegate {
+class Springboard: NSObject, CALayerDelegate, ECSBDataSource {
     let window: WALayerKitWindow
     @objc let layer: CALayer
     let desktopContainerLayer: CALayer
@@ -19,6 +20,17 @@ class Springboard: NSObject, CALayerDelegate {
     var windowIsOrderedOn = false
     var desktopStale = false
     var desktopLastUUID: String?
+    var springboard: ECSBSpringboard!
+    var appManager: LPAppManager?
+    var appLayout: LPLayout?
+    var rootPage: LPRoot?
+    var startTime: CFTimeInterval = 0
+    var loadingContainerLayer: CALayer?
+    var loadingLayer: ECShadowTextLayer?
+    var _deferLayout = false
+    var scanningComplete = false
+
+    nonisolated(unsafe) private static var scanningContext = 0
 
     override init() {
         layer = CALayer()
@@ -43,6 +55,11 @@ class Springboard: NSObject, CALayerDelegate {
         super.init()
         layer.delegate = self
         layer.insertSublayer(desktopContainerLayer, at: 0)
+        springboard = ECSBSpringboard(handler: self, numberOfRowsPerPage: springboardRows,
+                                      numberOfColumnsPerPage: springboardColumns,
+                                      scaleFactor: Float(Self.scaleFactor(of: display)), layoutRTL: layoutRightToLeft)
+        layer.addSublayer(springboard.layer)
+        _deferLayout = true
         let wid = window.wid()
         if wid != 0 {
             CGSSetWindowProperty(Int32(bitPattern: dockGlobals.dockConnection), wid, "kCGSWindowTitle" as CFString,
@@ -67,6 +84,225 @@ class Springboard: NSObject, CALayerDelegate {
 
     @objc var visible: Bool { _visible }
 
+    // MARK: - Startup (REF-GRID-001)
+
+    /// Called once, after the controller has been created: connects the model and shows the loading
+    /// indicator until the first scan has been handled.
+    @objc func activate() {
+        _setupApplicationSources(true)
+        NotificationCenter.default.addObserver(self, selector: #selector(_desktopPictureChanged(_:)),
+                                               name: NSNotification.Name("desktoppicturechanged"),
+                                               object: gDesktopPictureManager)
+    }
+
+    /// Called once the rest of the startup has run: from then on the grid is laid out.
+    @objc func start() {
+        setDeferLayout(false)
+        layout()
+    }
+
+    /// Takes the app manager, waits for its roots and for the end of the first scan. The manager's
+    /// notifications (added and removed apps, App Store) are phase 6.
+    @objc(_setupApplicationSources:)
+    func _setupApplicationSources(_ displayLoading: Bool) {
+        startTime = CACurrentMediaTime()
+        appManager = LPAppManager.sharedManager()
+        appManager?.roots { [self] root, _ in
+            MainActor.assumeIsolated {
+                guard let root else { return }
+                rootPage = root
+                // The root's progress is observed here too (phase 6).
+                let paths = ((appManager?.sources ?? []) as NSArray).value(forKey: "path") as? [Any] ?? []
+                // REF-LAYOUT-006: columns × rows on a page and in a folder.
+                appLayout = LPLayout(rootPage: root, sources: paths, maxItemsPerPage: springboardRows * springboardColumns,
+                                     maxItemsPerGroup: springboardRows * springboardColumns)
+                if !(appManager?.sourcesStillScanning ?? false) {
+                    _handleInitialSourceScanCompletion()
+                }
+            }
+        }
+        appManager?.addObserver(self, forKeyPath: "sourcesStillScanning", options: [.initial], context: &Self.scanningContext)
+        if displayLoading {
+            _displayLoadingLayer()
+        }
+    }
+
+    override nonisolated func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey: Any]?,
+                                           context: UnsafeMutableRawPointer?) {
+        guard context == &Self.scanningContext else {
+            super.observeValue(forKeyPath: keyPath, of: object, change: change, context: context)
+            return
+        }
+        MainActor.assumeIsolated {
+            // Not checking for the roots: when every source completes at once, this runs before they
+            // arrive, and the roots' block runs it again (research paper §12.9).
+            if keyPath == "sourcesStillScanning", !(appManager?.sourcesStillScanning ?? false), !scanningComplete {
+                _handleInitialSourceScanCompletion()
+                scanningComplete = true
+            }
+        }
+    }
+
+    /// Generates or corrects the layout (REF-LAYOUT-007), removes the loading indicator and rebuilds
+    /// the grid from the layout.
+    @objc func _handleInitialSourceScanCompletion() {
+        let items = rootPage?.allPurgatoryItems ?? []
+        if (rootPage?.children.count ?? 0) == 0 {
+            _ = appLayout?.layoutForInitial(items)
+        } else if let appLayout, let storage = appManager?.storage {
+            appLayout.layoutItemsToNextAvailableSpace(items, withOptions: 0)
+            let info = storage.dbInfo
+            let excludeVersion = (info?["excludeListVersionLP"] as AnyObject?)?.integerValue ?? 0
+            let gameVersion = (info?["includeAsGameListVersionLP"] as AnyObject?)?.integerValue ?? 0
+            let curationVersion = (info?["curateListVersionLP"] as AnyObject?)?.integerValue ?? 0
+            var gameGroup: LPGroup?
+            let manager = appManager
+            appLayout.fixupLayout(
+                withExcludeListVersion: UInt(bitPattern: excludeVersion), includeAsGameListVersion: UInt(bitPattern: gameVersion),
+                curationVersion: UInt(bitPattern: curationVersion),
+                itemExcluded: { item in
+                    let parent = item.parentContainer
+                    if let runnable = item as? LPRunnable {
+                        manager?.forgetRunnable(runnable)
+                    }
+                    parent?.children.remove(item)
+                },
+                itemIncludedAsGame: { item in
+                    if gameGroup == nil {
+                        gameGroup = appLayout.groupForKind(1)
+                    }
+                    guard let gameGroup,
+                          let page = gameGroup.firstAvailablePage(withMaxCount: appLayout.maxPerGroupPage, createIfNecessary: true),
+                          item.parentGroup !== gameGroup else { return }
+                    let parent = item.parentContainer
+                    page.children.add(item)
+                    parent?.children.remove(item)
+                },
+                changesMade: { excludeChanged, gameChanged, curated in
+                    if excludeChanged {
+                        storage.setDBInfoValue(NSNumber(value: appLayout.excludeListVersion), forKey: "excludeListVersionLP")
+                    }
+                    if gameChanged {
+                        storage.setDBInfoValue(NSNumber(value: appLayout.includeAsGameListVerison), forKey: "includeAsGameListVersionLP")
+                    }
+                    if curated {
+                        storage.setDBInfoValue(NSNumber(value: appLayout.curationVerison), forKey: "curateListVersionLP")
+                    }
+                })
+        }
+        rootPage?.purgePurgatory()
+        appManager?.storage?.markInitialSetupComplete()
+        // The startup time is reported for analytics here (not done in this project); icons are
+        // requested and every item observed, and the layout's blocks set (1.3.3, phase 6).
+        _removeLoadingLayer()
+        springboard.invalidate()
+        scanningComplete = true
+    }
+
+    @objc func deferLayout() -> Bool {
+        _deferLayout
+    }
+
+    @objc(setDeferLayout:)
+    func setDeferLayout(_ deferLayout: Bool) {
+        _deferLayout = deferLayout
+    }
+
+    /// Lays out the overlay container, the grid and the loading indicator. The grid's frame and margins
+    /// and the icon sizes are grid geometry (1.3.2).
+    @objc func layout() {
+        guard !_deferLayout else { return }
+        let bounds = containerWindow().convertRectFromGlobal(totalScreenBounds())
+        let disabled = disableActions()
+        layer.frame = bounds
+        springboard.layout()
+        if let loadingLayer, loadingLayer.superlayer != nil, let loadingContainerLayer {
+            // REF-GRID-002: centered, x truncated, y and size rounded up.
+            let size = loadingLayer.preferredFrameSize()
+            loadingContainerLayer.frame = CGRect(x: CGFloat(Int32(bounds.minX + bounds.width * 0.5 - size.width * 0.5)),
+                                                 y: (bounds.height * 0.5 - size.height * 0.5).rounded(.up),
+                                                 width: size.width.rounded(.up), height: size.height.rounded(.up))
+            loadingLayer.frame = loadingContainerLayer.bounds
+        }
+        if disabled {
+            CATransaction.setDisableActions(false)
+        }
+    }
+
+    // MARK: - Loading indicator (REF-GRID-001, REF-GRID-002)
+
+    /// Shown at the end of the overlay container instead of the grid until the first scan has been
+    /// handled.
+    @objc func _displayLoadingLayer() {
+        guard loadingLayer == nil else { return }
+        // REF-GRID-002: UI font type 103 (not a public type), 60 points.
+        let font = CTFontCreateUIFontForLanguage(CTFontUIFontType(rawValue: 103)!, 60, nil)
+        let container = CALayer()
+        loadingContainerLayer = container
+        container.allowsGroupBlending = false
+        layer.addSublayer(container)
+        let text = ECShadowTextLayer()
+        loadingLayer = text
+        text.string = launchPadBundle.localizedString(forKey: "LAUNCH_PAD_LOADING", value: "", table: nil)
+        // REF-GRID-002
+        text.fontSize = 60
+        text.foregroundColor = CGColor(gray: 52.0 / 255.0, alpha: 1)
+        text.compositingFilter = kCAFilterPlusL
+        text.textShadowColor = CGColor(gray: 0, alpha: 0.2)
+        text.textShadowOffset = CGSize(width: 0, height: -1)
+        text.textShadowBlur = 2
+        text.contentsScale = Self.scaleFactor(of: display())
+        if let font {
+            text.font = font
+        }
+        springboard.layer.isHidden = true
+        container.addSublayer(text)
+        layout()
+    }
+
+    /// Shows the grid and fades the indicator out in a transaction of its own; when it completes both
+    /// layers are removed (REF-GRID-001).
+    @objc func _removeLoadingLayer() {
+        guard let loadingLayer else { return }
+        CATransaction.begin()
+        CATransaction.setCompletionBlock {
+            MainActor.assumeIsolated {
+                let disabled = disableActions()
+                self.loadingLayer?.removeFromSuperlayer()
+                self.loadingContainerLayer?.removeFromSuperlayer()
+                self.loadingLayer = nil
+                self.loadingContainerLayer = nil
+                if disabled {
+                    CATransaction.setDisableActions(false)
+                }
+            }
+        }
+        springboard.layer.isHidden = false
+        loadingLayer.opacity = 0
+        CATransaction.commit()
+    }
+
+    // MARK: - ECSBDataSource
+
+    /// `items` and `kind`, the keys the item tree is built from (research paper §6.1). The other keys
+    /// (icons, titles, progress, status) and the search pages come with later sub-phases.
+    func value(forKey key: String, ofItem item: AnyObject?, withInfo info: AnyObject?) -> AnyObject? {
+        guard let item else {
+            return key == "items" ? rootPage?.children : nil
+        }
+        switch key {
+        case "items":
+            return (item as? LPItemContainer)?.children
+        case "kind":
+            if item is LPPage {
+                return "page" as NSString
+            }
+            return (item is LPGroup ? "group" : "item") as NSString
+        default:
+            return nil
+        }
+    }
+
     // MARK: - Open and close (REF-OVERLAY-007)
 
     @objc(setVisible:reason:)
@@ -88,6 +324,12 @@ class Springboard: NSObject, CALayerDelegate {
             }
         }
         _visible = visible
+        if visible {
+            _deferLayout = false
+            // Icon caching, the display check, the zoom and the item contents come here too (1.3.2,
+            // 1.3.3, 1.6).
+            layout()
+        }
         _enterExitAnimation(visible, slow: slow)
     }
 
@@ -195,6 +437,18 @@ class Springboard: NSObject, CALayerDelegate {
 
     // MARK: - Background (REF-OVERLAY-003, REF-OVERLAY-005)
 
+    /// The wallpaper changed on a display's space. Nothing posts this notification, in the original
+    /// as here (research paper §5.4.3).
+    @objc(_desktopPictureChanged:)
+    func _desktopPictureChanged(_ notification: Notification) {
+        let display = display()
+        let info = notification.userInfo
+        guard (info?["did"] as? NSNumber)?.uint64Value == UInt64(display),
+              let uuid = info?["uuid"] as? String,
+              let current = spaces.currentSpace(forDisplay: display)?.uuid, current == uuid else { return }
+        updateDesktopImages()
+    }
+
     /// A new background layer for the current space of the display, as large as the display.
     @objc func _newDesktopLayer() -> CALayer {
         let display = display()
@@ -267,6 +521,22 @@ class Springboard: NSObject, CALayerDelegate {
         return scale > 0 ? scale : 1
     }
 }
+
+/// Columns and rows of a page: preferences read once per process, each clamped to 2...100
+/// (REF-LAYOUT-006).
+@MainActor let springboardColumns = pageDimension("springboard-columns", default: 7)
+@MainActor let springboardRows = pageDimension("springboard-rows", default: 5)
+
+@MainActor
+func pageDimension(_ key: String, default value: Int32) -> UInt {
+    let number = (UserDefaults.standard.object(forKey: key) as? NSNumber)?.int32Value ?? value
+    return number > 1 ? UInt(min(number, 100)) : 2  // REF-LAYOUT-006
+}
+
+/// Whether the layout is right to left. Dock reads it once at startup from its writing direction and
+/// passes it to every grid class (research paper §7); the writing direction comes with the grid
+/// geometry (1.3.2).
+let layoutRightToLeft = false
 
 /// Disables implicit actions in the current transaction unless they already are; returns whether it
 /// did, so the caller can enable them again.

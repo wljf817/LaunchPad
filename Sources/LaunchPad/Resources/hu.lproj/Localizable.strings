@@ -5,3 +5,6 @@
 "TestFlight" = "TestFlight";
 "Server" = "Szerver";
 "%@ (Other)" = "%@ (Egyéb)";
+
+/* Loading indicator, REF-GRID-002 */
+"LAUNCH_PAD_LOADING" = "Alkalmazások betöltése…";

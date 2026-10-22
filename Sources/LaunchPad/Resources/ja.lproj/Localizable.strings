@@ -5,3 +5,6 @@
 "TestFlight" = "TestFlight";
 "Server" = "サーバ";
 "%@ (Other)" = "%@（その他）";
+
+/* Loading indicator, REF-GRID-002 */
+"LAUNCH_PAD_LOADING" = "アプリケーションを読み込み中…";

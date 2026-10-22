@@ -138,6 +138,19 @@ typedef struct CAColorMatrix {
 + (void)addCommitHandler:(void (^)(void))block forPhase:(int)phase;
 @end
 
+// ---------------------------------------------------------------------------
+// The grid (grid-tree). Verified on macOS 26.6.2 (25G83) and macOS 27.0.1
+// (26A434).
+
+// Group blending of a layer's sublayers. The loading indicator's container and
+// an item layer's jitter layer turn it off (REF-GRID-002, research paper §6).
+@interface CALayer (LaunchPadGroupBlending)
+@property BOOL allowsGroupBlending;
+@end
+
+// The "plusL" compositing filter of the loading indicator's text (REF-GRID-002).
+extern NSString * const kCAFilterPlusL;
+
 // LaunchServices' record of an installed app; public on iOS, not declared on macOS.
 // Tells whether a scanned app is a web app (flag 0x1000, REF-LAYOUT-003).
 @interface LSApplicationRecord : NSObject

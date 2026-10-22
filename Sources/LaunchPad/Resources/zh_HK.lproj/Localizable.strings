@@ -5,3 +5,6 @@
 "TestFlight" = "TestFlight";
 "Server" = "伺服器";
 "%@ (Other)" = "%@（其他）";
+
+/* Loading indicator, REF-GRID-002 */
+"LAUNCH_PAD_LOADING" = "正在載入應用程式⋯";

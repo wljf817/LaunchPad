@@ -35,7 +35,8 @@ final class LPAppManager: NSObject, @unchecked Sendable {
     static let runnableKey = "kLPAppManagerRunnableKey"
 
     nonisolated(unsafe) private static var bringupContext = 0
-    nonisolated(unsafe) private static var shared: LPAppManager?
+    /// Set by unit tests before the controller's startup takes it (grid-tree design decision 2).
+    nonisolated(unsafe) static var shared: LPAppManager?
 
     /// The manager of this process's database (REF-LAYOUT-001, REF-DEV-002), made on first use.
     @objc class func sharedManager() -> LPAppManager? {

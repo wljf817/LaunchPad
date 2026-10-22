@@ -5,3 +5,6 @@
 "TestFlight" = "TestFlight";
 "Server" = "الخادم";
 "%@ (Other)" = "%@ (آخر)";
+
+/* Loading indicator, REF-GRID-002 */
+"LAUNCH_PAD_LOADING" = "يتم الآن تحميل التطبيقات…";

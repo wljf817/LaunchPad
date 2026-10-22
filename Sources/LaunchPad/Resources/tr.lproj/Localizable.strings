@@ -5,3 +5,6 @@
 "TestFlight" = "TestFlight";
 "Server" = "Sunucu";
 "%@ (Other)" = "%@ (Diğer)";
+
+/* Loading indicator, REF-GRID-002 */
+"LAUNCH_PAD_LOADING" = "Uygulamalar Yükleniyor…";

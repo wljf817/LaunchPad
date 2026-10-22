@@ -57,6 +57,15 @@ final class WALayerKitWindow: WAWindow {
         copyNeedsSync()
     }
 
+    /// A rectangle in global coordinates (origin at the top left) in the window's coordinates (origin
+    /// at the bottom left), as the original converts it (research paper §3.1).
+    @objc(convertRectFromGlobal:)
+    func convertRectFromGlobal(_ rect: CGRect) -> CGRect {
+        let frame = frame()
+        return CGRect(x: rect.minX - frame.minX, y: frame.height - (rect.minY - frame.minY) - rect.height,
+                      width: rect.width, height: rect.height)
+    }
+
     // MARK: - Window frames
 
     /// The main window's and the strip's frames in global coordinates: the strip is the menu bar's
@@ -135,10 +144,12 @@ final class WALayerKitWindow: WAWindow {
         }
     }
 
+    /// A plain `CALayer` for every layer: the grid's layer classes have no `-init` to make a copy of
+    /// their own class with, and no text is drawn in the strip's area yet.
     func copy(of source: CALayer) -> CALayer {
         let id = ObjectIdentifier(source)
         if let copy = copies[id] { return copy }
-        let copy = type(of: source).init()
+        let copy = CALayer()
         copy.actions = Self.noActions
         copies[id] = copy
         observations[id] = observe(source)

@@ -1,5 +1,6 @@
 import Foundation
 import SQLite3
+import Testing
 @testable import LaunchPad
 
 /// A directory under `~/Library/Caches`, removed when the value goes away. Not under the temporary
@@ -158,3 +159,66 @@ let testResources: Bundle = {
 /// The research evidence directory (`research/…/notes/lp-model`) given by `LAUNCHPAD_ORIGINAL_DB`,
 /// for tests against the original's database.
 let originalEvidence: URL? = ProcessInfo.processInfo.environment["LAUNCHPAD_ORIGINAL_DB"].map { URL(fileURLWithPath: $0) }
+
+/// Waits until a controller has handled the first scan with its roots, and the database has written
+/// what that queued.
+@MainActor
+func waitUntilStarted(_ springboard: Springboard) async throws {
+    let deadline = Date().addingTimeInterval(120)
+    while !springboard.scanningComplete || springboard.rootPage == nil {
+        try #require(Date() < deadline, "the first scan was not handled")
+        try await Task.sleep(for: .milliseconds(10))
+    }
+    // Let the main queue run what the startup queued (dbinfo writes of completion blocks).
+    try await Task.sleep(for: .milliseconds(50))
+    if let storage = springboard.appManager?.storage {
+        await waitForDatabase(storage)
+    }
+}
+
+/// The grid's item tree mirrors the layout root's pages, apps and folders, in order, and every page
+/// has its page (research paper §6.1, REF-GRID-003).
+@MainActor
+func expectItemTree(_ springboard: Springboard, sourceLocation: SourceLocation = #_sourceLocation) {
+    guard let root = springboard.rootPage else {
+        Issue.record("no root", sourceLocation: sourceLocation)
+        return
+    }
+    let item = springboard.springboard.item
+    let pageItems = (item.items as? [ECSBPageItem]) ?? []
+    let pages = root.children as! [LPPage]
+    #expect(pageItems.count == pages.count, sourceLocation: sourceLocation)
+    for (pageItem, page) in zip(pageItems, pages) {
+        #expect(pageItem.clientItem === page, sourceLocation: sourceLocation)
+        #expect(pageItem.parent === item, sourceLocation: sourceLocation)
+        #expect(pageItem.page != nil, sourceLocation: sourceLocation)
+        expectItems(of: pageItem, mirroring: page, sourceLocation: sourceLocation)
+    }
+}
+
+@MainActor
+func expectItems(of container: ECSBContainerItem, mirroring group: LPGroup, sourceLocation: SourceLocation) {
+    let items = (container.items as? [ECSBItem]) ?? []
+    let children = group.children as! [LPItem]
+    #expect(items.count == children.count, sourceLocation: sourceLocation)
+    for (item, child) in zip(items, children) {
+        #expect(item.clientItem === child, sourceLocation: sourceLocation)
+        #expect(item.parent === container, sourceLocation: sourceLocation)
+        if let folder = child as? LPGroup {
+            guard let groupItem = item as? ECSBGroupItem else {
+                Issue.record("\(child) is not a folder item", sourceLocation: sourceLocation)
+                continue
+            }
+            let folderPageItems = (groupItem.items as? [ECSBPageItem]) ?? []
+            let folderPages = folder.children as! [LPPage]
+            #expect(folderPageItems.count == folderPages.count, sourceLocation: sourceLocation)
+            for (pageItem, page) in zip(folderPageItems, folderPages) {
+                #expect(pageItem.clientItem === page, sourceLocation: sourceLocation)
+                #expect(pageItem.parent === groupItem, sourceLocation: sourceLocation)
+                expectItems(of: pageItem, mirroring: page, sourceLocation: sourceLocation)
+            }
+        } else {
+            #expect(type(of: item) == ECSBItem.self, sourceLocation: sourceLocation)
+        }
+    }
+}

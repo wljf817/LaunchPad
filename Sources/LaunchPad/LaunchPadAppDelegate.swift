@@ -2,8 +2,9 @@ import AppKit
 import XPC
 
 /// The background process's application delegate (app-architecture: the project's own bridging
-/// classes). It creates the controller and receives the launcher's toggle message on LaunchPad's
-/// Mach service, as the Dock receives `Launchpad.app`'s (REF-ARCH-009, REF-DEV-013).
+/// classes). It creates, activates and starts the controller as Dock's startup does, and receives the
+/// launcher's toggle message on LaunchPad's Mach service, as the Dock receives `Launchpad.app`'s
+/// (REF-ARCH-009, REF-DEV-013).
 @MainActor
 @objc(LaunchPadAppDelegate)
 final class LaunchPadAppDelegate: NSObject, NSApplicationDelegate {
@@ -17,7 +18,14 @@ final class LaunchPadAppDelegate: NSObject, NSApplicationDelegate {
         // Creating the Dock's visibility controller turns auto-hide back on if a previous run left
         // it off (REF-DEV-004).
         _ = dockBar.visibilityController
-        springboard = LPSpringboard()
+        // As Dock: the controller is activated during the startup and started once it has finished,
+        // from the main queue (REF-GRID-001).
+        let springboard = LPSpringboard()
+        self.springboard = springboard
+        springboard.activate()
+        DispatchQueue.main.async {
+            springboard.start()
+        }
         let listener = xpc_connection_create_mach_service(Self.serviceName, .main,
                                                           UInt64(XPC_CONNECTION_MACH_SERVICE_LISTENER))
         xpc_connection_set_event_handler(listener) { peer in
