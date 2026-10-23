@@ -41,6 +41,12 @@ final class DockGlobals: NSObject {
         _AXInterfaceGetReduceMotionEnabled()
     }
 
+    /// Whether Dock's appearance is dark: Dock's environment follows the system appearance, which a
+    /// separate app reads from its own effective appearance (REF-GRID-012).
+    @objc var darkDock: Bool {
+        NSApplication.shared.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+    }
+
     /// Dock's split-view window picker. No outside counterpart (REF-DEV-007).
     @objc var inAcceleratedTwoUp: Bool { false }
 
