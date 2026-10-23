@@ -246,3 +246,95 @@ func notificationEvent(code: Int64) -> CGEvent {
         #expect(controller.eventHandlers.count == 0)
     }
 }
+
+/// A controller that records the open and close requests instead of making them.
+@MainActor
+final class RecordingSpringboard: Springboard {
+    var reasons: [String] = []
+    var handleEventResult: Bool?
+    var handledEvents = 0
+
+    override func setVisible(_ visible: Bool, reason: String?) {
+        reasons.append(reason ?? "")
+        _visible = visible
+    }
+
+    override func handleEvent(_ event: AnyObject) -> Bool {
+        handledEvents += 1
+        return handleEventResult ?? super.handleEvent(event)
+    }
+}
+
+@MainActor
+@Suite(.serialized) struct SpringboardEventTests {
+    func makeEvent(_ cgEvent: CGEvent) -> ECEvent {
+        ECEvent(event: cgEvent, hitLayer: nil, hitWindow: nil, session: nil)
+    }
+
+    @Test("Esc 关闭，Return 不关闭")
+    func keys() {
+        let springboard = RecordingSpringboard()
+        springboard._visible = true
+        #expect(springboard.keyDown(makeEvent(keyEvent(36, character: 0x0d))))
+        #expect(springboard.reasons.isEmpty)
+        #expect(springboard.keyDown(makeEvent(keyEvent(53, character: 0x1b))))
+        #expect(springboard.reasons == ["perform cancel while visible"])
+    }
+
+    @Test("通知码 0x1000、0xf102 和 nil 关闭，0x4000 不关")
+    func lostKeyFocus() {
+        let springboard = RecordingSpringboard()
+        for code in [0x1000, 0xf102, 0x4000] as [Int64] {
+            springboard._visible = true
+            springboard.lostKeyFocus(makeEvent(notificationEvent(code: code)))
+        }
+        springboard._visible = true
+        springboard.lostKeyFocus(nil)
+        #expect(springboard.reasons == ["lost key focus", "lost key focus", "lost key focus"])
+    }
+
+    @Test("不可见时 handleEvent: 返回 NO")
+    func handleEventWhileHidden() {
+        let springboard = Springboard()
+        #expect(!springboard.handleEvent(keyEvent(53, character: 0x1b)))
+    }
+
+    @Test("Dock 栏矩形以外的左键按下关闭，矩形里的不关")
+    func leftMouseDown() {
+        let springboard = RecordingSpringboard()
+        springboard._visible = true
+        let bar = dockBar.inBarRect
+        if !bar.isEmpty {
+            #expect(!springboard.leftMouseDown(makeEvent(mouseEvent(.leftMouseDown, at: CGPoint(x: bar.midX, y: bar.midY)))))
+            #expect(springboard.reasons.isEmpty)
+        }
+        let outside = CGPoint(x: bar.isEmpty ? 10 : bar.minX + 10, y: bar.isEmpty ? 10 : bar.minY - 50)
+        #expect(!springboard.leftMouseDown(makeEvent(mouseEvent(.leftMouseDown, at: outside))))
+        #expect(springboard.reasons == ["left mouse down outside Dock"])
+    }
+
+    @Test("取消：可见时关闭")
+    func cancel() {
+        let springboard = RecordingSpringboard()
+        springboard.cancelAction(with: nil, sender: nil)
+        #expect(springboard.reasons.isEmpty)
+        springboard._visible = true
+        springboard.cancelAction(with: nil, sender: nil)
+        #expect(springboard.reasons == ["cancel action while visible"])
+    }
+
+    @Test("关闭动画开始时卸下处理者，不再在接收事件")
+    func cleanupRemovesHandler() {
+        let springboard = Springboard()
+        let controller = ECModalEventController.sharedController()
+        controller.addHandler(springboard, externalEventSource: true, usingMouseHysteresis: true)
+        dockGlobals.springboardIsCapturingEvents = true
+        eventCapturingSpringboard = springboard
+        springboard._cleanupBeforeExitAnimation()
+        #expect(controller.eventHandlers.count == 0)
+        #expect(!dockGlobals.springboardIsCapturingEvents)
+        #expect(eventCapturingSpringboard == nil)
+    }
+
+
+}

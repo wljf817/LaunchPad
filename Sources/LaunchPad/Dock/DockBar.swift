@@ -43,6 +43,15 @@ final class DockBar: NSObject {
         }
     }
 
+    /// The Dock bar's rectangle in global coordinates: the window server's Dock rectangle (REF-DEV-019).
+    @objc var inBarRect: CGRect {
+        var rect = CGRect.zero
+        var reason: Int32 = 0
+        var orientation: Int32 = 0
+        SLSGetDockRectWithOrientation(CGSMainConnectionID(), &rect, &reason, &orientation)
+        return rect
+    }
+
     private func barGeometry() -> (tileSize: Float, distanceTop: Float, distanceBottom: Float) {
         let dock = dockRect()
         // A Dock that would hide (auto-hide) and is shown by LaunchPad's override has no rectangle in

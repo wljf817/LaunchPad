@@ -8,7 +8,8 @@ import os
 /// grid (REF-GRID-001). It is the grid components' data source.
 @MainActor
 @objc(Springboard)
-class Springboard: NSObject, CALayerDelegate, ECSBDataSource {
+class Springboard: NSObject, ECModalEventHandler, ECEventHandlingDelegate, ECSBDataSource, ECSBActionHandling,
+                   CALayerDelegate {
     let window: WALayerKitWindow
     @objc let layer: CALayer
     let desktopContainerLayer: CALayer
@@ -38,6 +39,9 @@ class Springboard: NSObject, CALayerDelegate, ECSBDataSource {
     var _purgeItemsTimer: DispatchSourceTimer?
     var scanningComplete = false
     var ensuringSize = false
+    /// Set during an event's dispatch when the event should still go to the Dock; nothing sets it
+    /// (REF-OVERLAY-009).
+    var lastEventShouldBeHandledByDock = false
 
     nonisolated(unsafe) private static var scanningContext = 0
     nonisolated(unsafe) private static var itemContext = 0
@@ -66,6 +70,7 @@ class Springboard: NSObject, CALayerDelegate, ECSBDataSource {
         window.opaqueLayer = desktopContainerLayer
         super.init()
         layer.delegate = self
+        layer.eventDelegate = self  // REF-ARCH-006
         layer.insertSublayer(desktopContainerLayer, at: 0)
         springboard = ECSBSpringboard(handler: self, numberOfRowsPerPage: springboardRows,
                                       numberOfColumnsPerPage: springboardColumns,
@@ -506,6 +511,82 @@ class Springboard: NSObject, CALayerDelegate, ECSBDataSource {
         }
     }
 
+    // MARK: - Events (REF-OVERLAY-009, REF-OVERLAY-010)
+
+    /// An event of the process while Launchpad gets the events first: dispatched in Launchpad's window
+    /// with the overlay container as the top layer. Returns NO when the event should go on to the
+    /// process's other handling.
+    @objc(handleEvent:)
+    func handleEvent(_ event: AnyObject) -> Bool {
+        guard _visible else { return false }
+        lastEventShouldBeHandledByDock = false
+        var windows = [containerWindow()]
+        var topLayers = [layer]
+        ECModalEventController.sharedController().handleEvent(event, windows: &windows, topLayers: &topLayers, windowCount: 1)
+        return !lastEventShouldBeHandledByDock
+    }
+
+    func modalEventLayer() -> CALayer? {
+        layer
+    }
+
+    func handlesModalDragEvents() -> Bool {
+        true
+    }
+
+    /// After every dispatched event: Launchpad gets the events first only while visible.
+    func modalEventProcessed() {
+        dockGlobals.springboardIsCapturingEvents = _visible
+        eventCapturingSpringboard = _visible ? self : nil
+    }
+
+    /// Another app or process took the keyboard focus (`event` is the notification), or another
+    /// modal handler was pushed (nil). Code 0x4000 (a panel that does not activate its app) leaves
+    /// Launchpad open; the alert panel and search field conditions come with phases 3 and 4.
+    @objc(lostKeyFocus:)
+    func lostKeyFocus(_ event: ECEvent?) {
+        if (event?.notifyCode ?? 0) != 0x4000 {  // REF-OVERLAY-010
+            setVisible(false, reason: "lost key focus")
+        }
+    }
+
+    /// A press that no layer handled: closes unless it is on the Dock bar. The shown folder's branch is
+    /// phase 5.
+    @objc(leftMouseDown:)
+    func leftMouseDown(_ event: ECEvent) -> Bool {
+        if !dockBar.inBarRect.contains(event.location) {
+            setVisible(false, reason: "left mouse down outside Dock")
+        }
+        return false
+    }
+
+    /// Escape cancels. The grid and the text input see the key first, Return and Enter end edit mode,
+    /// and the navigation keys move the selection in later phases.
+    @objc(keyDown:)
+    func keyDown(_ event: ECEvent) -> Bool {
+        if event.keyData == 0x1b {  // Escape (REF-OVERLAY-010)
+            performCancel()
+        }
+        return true
+    }
+
+    /// Cancels the first thing there is to cancel: here only Launchpad itself; the drag, delete mode,
+    /// the folder and the search come first in later phases.
+    @objc func performCancel() {
+        if _visible {
+            setVisible(false, reason: "perform cancel while visible")
+        }
+    }
+
+    /// A click on the grid that was not on an item and not a drag. The system drag and delete mode
+    /// conditions are phase 4.
+    @objc(cancelActionWithEvent:sender:)
+    func cancelAction(with event: ECEvent?, sender: AnyObject?) {
+        if _visible {
+            setVisible(false, reason: "cancel action while visible")
+        }
+    }
+
     // MARK: - Open and close (REF-OVERLAY-007)
 
     @objc(setVisible:reason:)
@@ -589,7 +670,11 @@ class Springboard: NSObject, CALayerDelegate, ECSBDataSource {
                                                  CFNotificationName("com.apple.HIToolbox.cancelMenuTrackingNotification" as CFString),
                                                  nil, nil, true)
         }
+        // REF-OVERLAY-009: Launchpad becomes the modal event handler and gets the events first.
+        ECModalEventController.sharedController().addHandler(self, externalEventSource: true, usingMouseHysteresis: true)
         CPSStealKeyFocusOnConnection(connection, 0x480)
+        dockGlobals.springboardIsCapturingEvents = true
+        eventCapturingSpringboard = self
         desktopLayer?.removeFromSuperlayer()
         let desktopLayer = _newDesktopLayer()
         self.desktopLayer = desktopLayer
@@ -658,7 +743,10 @@ class Springboard: NSObject, CALayerDelegate, ECSBDataSource {
     }
 
     @objc func _cleanupBeforeExitAnimation() {
+        ECModalEventController.sharedController().removeHandler(self)  // REF-OVERLAY-009
         CPSReleaseKeyFocusOnConnection(Int32(bitPattern: dockGlobals.dockConnection))
+        dockGlobals.springboardIsCapturingEvents = false
+        eventCapturingSpringboard = nil
     }
 
     @objc(_cleanupAfterExitAnimation:openCount:)
@@ -816,3 +904,6 @@ func disableActions() -> Bool {
     CATransaction.setDisableActions(true)
     return true
 }
+
+/// The controller that gets the process's events first while it is open (REF-OVERLAY-009).
+@MainActor var eventCapturingSpringboard: Springboard?

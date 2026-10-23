@@ -12,6 +12,9 @@ final class DockGlobals: NSObject {
     /// Whether another app's menu is being tracked, kept from the HIToolbox menu-tracking
     /// notifications as Dock keeps it (REF-DEV-009).
     @objc private(set) var externalMenuIsUp = false
+    /// Whether Launchpad gets the process's events first (REF-OVERLAY-009): set while it is the modal
+    /// event handler, read where the events come in (`LaunchPadAppDelegate`).
+    @objc var springboardIsCapturingEvents = false
 
     override init() {
         slowMotionAllowed = UserDefaults.standard.bool(forKey: "slow-motion-allowed")
