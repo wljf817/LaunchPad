@@ -17,6 +17,9 @@ final class LaunchPadAppDelegate: NSObject, NSApplicationDelegate {
     var eventMonitor: Any?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // The closes the Dock decides are made from the accessibility hierarchy (REF-DEV-024,
+        // REF-DEV-026): ask for the permission, with the system's prompt, before the Dock classes exist.
+        _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)  // kAXTrustedCheckOptionPrompt
         // Creating the Dock's visibility controller removes the Dock's override if a previous run
         // left it on (REF-DEV-004).
         _ = dockBar.visibilityController
@@ -27,6 +30,9 @@ final class LaunchPadAppDelegate: NSObject, NSApplicationDelegate {
         // from the main queue (REF-GRID-001).
         let springboard = LPSpringboard()
         self.springboard = springboard
+        launchpadSpringboard = springboard
+        // As Dock: Mission Control's object exists from the start (REF-DEV-026).
+        _ = wvExpose
         springboard.activate()
         DispatchQueue.main.async {
             springboard.start()

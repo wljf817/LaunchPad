@@ -907,3 +907,7 @@ func disableActions() -> Bool {
 
 /// The controller that gets the process's events first while it is open (REF-OVERLAY-009).
 @MainActor var eventCapturingSpringboard: Springboard?
+
+/// Launchpad's controller as the Dock's own classes reach it, for the closes the Dock decides
+/// (REF-DEV-024, REF-DEV-025, REF-DEV-026). Set when the controller is created.
+@MainActor var launchpadSpringboard: Springboard?

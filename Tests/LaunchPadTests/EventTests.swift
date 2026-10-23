@@ -371,3 +371,54 @@ final class RecordingSpringboard: Springboard {
         #expect(springboard.handledEvents == 2)
     }
 }
+
+@MainActor
+@Suite(.serialized) struct DockSideCloseTests {
+    let springboard = RecordingSpringboard()
+
+    init() {
+        launchpadSpringboard = springboard
+    }
+
+    @Test("点 Dock：只有带动作的图标算，分隔线和 LaunchPad 自己的不算")
+    func tileKinds() {
+        let own = URL(fileURLWithPath: "/Applications/LaunchPad.app")
+        let reminders = URL(string: "file:///System/Applications/Reminders.app/")
+        #expect(DockBar.isTile(role: "AXDockItem", subrole: "AXApplicationDockItem", url: reminders, ownURL: own))
+        #expect(DockBar.isTile(role: "AXDockItem", subrole: "AXFolderDockItem", url: URL(string: "file:///Users/x/Downloads/"), ownURL: own))
+        #expect(DockBar.isTile(role: "AXDockItem", subrole: "AXTrashDockItem", url: nil, ownURL: own))
+        #expect(!DockBar.isTile(role: "AXDockItem", subrole: "AXSeparatorDockItem", url: nil, ownURL: own))
+        #expect(!DockBar.isTile(role: "AXDockItem", subrole: "AXApplicationDockItem", url: URL(string: "file:///Applications/LaunchPad.app/"), ownURL: own))
+        #expect(!DockBar.isTile(role: "AXWindow", subrole: nil, url: nil, ownURL: own))
+    }
+
+    @Test("点 Dock：关着时什么也不做，也不记按下")
+    func tileMouseWhileHidden() {
+        dockBar.tileMouse(down: true, at: CGPoint(x: 10, y: 10))
+        #expect(dockBar.mouseDownItem == nil)
+        dockBar.tileMouse(down: false, at: CGPoint(x: 10, y: 10))
+        #expect(springboard.reasons.isEmpty)
+    }
+
+    @Test("打开期间开始的菜单结束时以 menu closed 关闭，关着时开始的不关")
+    func menuClosed() {
+        dockGlobals.menuTrackingBegan()
+        springboard._visible = true
+        dockGlobals.menuTrackingEnded()
+        #expect(springboard.reasons.isEmpty)
+        dockGlobals.menuTrackingBegan()
+        #expect(dockGlobals.externalMenuIsUp)
+        dockGlobals.menuTrackingEnded()
+        #expect(!dockGlobals.externalMenuIsUp)
+        #expect(springboard.reasons == ["menu closed"])
+    }
+
+    @Test("调度中心换模式时以 WV change mode 关闭，关着时不动")
+    func missionControl() {
+        wvExpose.changedMode()
+        #expect(springboard.reasons.isEmpty)
+        springboard._visible = true
+        wvExpose.changedMode()
+        #expect(springboard.reasons == ["WV change mode"])
+    }
+}

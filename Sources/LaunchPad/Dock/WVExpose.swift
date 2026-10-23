@@ -1,10 +1,35 @@
 import AppKit
+import ApplicationServices
 import LaunchPadPrivate
 
-/// Mission Control, which lives in the Dock (REF-ARCH-010, REF-DEV-005).
+/// Mission Control, which lives in the Dock (REF-ARCH-010, REF-DEV-005, REF-DEV-026).
 @MainActor
 @objc(WVExpose)
 final class WVExpose: NSObject {
+    var observer: AXObserver?
+
+    /// As the Dock's Mission Control closes Launchpad when it changes mode, its accessibility
+    /// notifications close it here (REF-DEV-026).
+    override init() {
+        super.init()
+        guard let dock = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.dock").first,
+              AXObserverCreate(dock.processIdentifier, { _, _, _, _ in
+                  MainActor.assumeIsolated { wvExpose.changedMode() }
+              }, &observer) == .success, let observer else { return }
+        let application = AXUIElementCreateApplication(dock.processIdentifier)
+        for name in ["AXExposeShowAllWindows", "AXExposeShowFrontWindows", "AXExposeShowDesktop"] {
+            AXObserverAddNotification(observer, application, name as CFString, nil)
+        }
+        CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .defaultMode)
+    }
+
+    /// Mission Control started a mode: Launchpad closes (REF-DEV-026).
+    func changedMode() {
+        if let springboard = launchpadSpringboard, springboard.visible {
+            springboard.setVisible(false, reason: "WV change mode")
+        }
+    }
+
     /// Non-zero while Mission Control is up: the Dock then has a full-screen window at level 18
     /// (REF-DEV-005).
     @objc var mode: Int {

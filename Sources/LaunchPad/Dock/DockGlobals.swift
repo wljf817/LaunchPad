@@ -15,6 +15,8 @@ final class DockGlobals: NSObject {
     /// Whether Launchpad gets the process's events first (REF-OVERLAY-009): set while it is the modal
     /// event handler, read where the events come in (`LaunchPadAppDelegate`).
     @objc var springboardIsCapturingEvents = false
+    /// Whether the menu being tracked began while Launchpad was open (REF-DEV-025).
+    var menuBeganWhileOpen = false
 
     override init() {
         slowMotionAllowed = UserDefaults.standard.bool(forKey: "slow-motion-allowed")
@@ -26,11 +28,28 @@ final class DockGlobals: NSObject {
         let center = DistributedNotificationCenter.default()
         center.addObserver(forName: Notification.Name("com.apple.HIToolbox.beginMenuTrackingNotification"),
                            object: nil, queue: .main) { _ in
-            MainActor.assumeIsolated { dockGlobals.externalMenuIsUp = true }
+            MainActor.assumeIsolated { dockGlobals.menuTrackingBegan() }
         }
         center.addObserver(forName: Notification.Name("com.apple.HIToolbox.endMenuTrackingNotification"),
                            object: nil, queue: .main) { _ in
-            MainActor.assumeIsolated { dockGlobals.externalMenuIsUp = false }
+            MainActor.assumeIsolated { dockGlobals.menuTrackingEnded() }
+        }
+    }
+
+    func menuTrackingBegan() {
+        externalMenuIsUp = true
+        if launchpadSpringboard?.visible == true {
+            menuBeganWhileOpen = true
+        }
+    }
+
+    /// A menu that began while Launchpad was open has closed: in practice the Dock's, whose closing
+    /// closes Launchpad in the original (REF-DEV-025).
+    func menuTrackingEnded() {
+        externalMenuIsUp = false
+        defer { menuBeganWhileOpen = false }
+        if menuBeganWhileOpen, let springboard = launchpadSpringboard, springboard.visible {
+            springboard.setVisible(false, reason: "menu closed")
         }
     }
 
