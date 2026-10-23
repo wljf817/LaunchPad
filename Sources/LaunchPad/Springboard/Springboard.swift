@@ -34,6 +34,8 @@ class Springboard: NSObject, CALayerDelegate, ECSBDataSource {
     var loadingContainerLayer: CALayer?
     var loadingLayer: ECShadowTextLayer?
     var _deferLayout = false
+    /// Purges the icon contents a while after a close (REF-GRID-015).
+    var _purgeItemsTimer: DispatchSourceTimer?
     var scanningComplete = false
     var ensuringSize = false
 
@@ -517,6 +519,8 @@ class Springboard: NSObject, CALayerDelegate, ECSBDataSource {
     func setVisible(_ visible: Bool, slow: Bool, forGaming: Bool, reason: String?) {
         Logger().info("Launchpad changing to \(visible ? "visible" : "NOT visible") for \(reason ?? "(null)")")
         guard _visible != visible else { return }
+        _purgeItemsTimer?.cancel()
+        _purgeItemsTimer = nil
         if visible {
             // REF-DEV-007: the conditions that refuse an open, as far as they can be read.
             guard !spaces.anySwitchingOccurring, dragController.currentDragContents & 0x10 == 0 else { return }
@@ -527,7 +531,8 @@ class Springboard: NSObject, CALayerDelegate, ECSBDataSource {
         _visible = visible
         if visible {
             _deferLayout = false
-            // Icon caching and the display check come here too (1.3.4, 1.6).
+            rootPage?.setShouldCacheIcons(true)  // REF-GRID-015
+            // The display check comes here too (1.6).
             springboard.zoomFactor = getZoomFactorFromPrefs()  // REF-GRID-005
             springboard.reloadItemContents(false)  // REF-GRID-014
             layout()
@@ -535,7 +540,31 @@ class Springboard: NSObject, CALayerDelegate, ECSBDataSource {
         _enterExitAnimation(visible, slow: slow)
         if visible {
             processPendingUpdates()  // REF-GRID-014
+        } else {
+            purgeItemContentsLater()  // REF-GRID-015
         }
+        springboard.setVisible(_visible)  // REF-GRID-015
+    }
+
+    /// Purges the main grid's icon contents and lets the items drop their own icons 5 s after a close,
+    /// unless Launchpad is shown again or a gesture is under way by then (REF-GRID-015).
+    @objc func purgeItemContentsLater() {
+        _purgeItemsTimer?.cancel()
+        _purgeItemsTimer = nil
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.setEventHandler {
+            MainActor.assumeIsolated {
+                self._purgeItemsTimer?.cancel()
+                self._purgeItemsTimer = nil
+                if !self._visible, self._visibility == 0 {
+                    self.springboard.purgeItemContents(false)
+                    self.rootPage?.setShouldCacheIcons(false)
+                }
+            }
+        }
+        timer.schedule(deadline: .now() + .seconds(5), repeating: .never, leeway: .nanoseconds(0))  // REF-GRID-015
+        timer.resume()
+        _purgeItemsTimer = timer
     }
 
     @objc(_enterExitAnimation:slow:)
@@ -571,11 +600,21 @@ class Springboard: NSObject, CALayerDelegate, ECSBDataSource {
         desktopContainerLayer.insertSublayer(desktopLayer, at: 0)
         desktopContainerLayer.frame = CGRect(origin: .zero, size: bounds.size)
         layer.opacity = 0
+        if !dockGlobals.axReduceMotion {  // REF-OVERLAY-008
+            let zoomed = CATransform3DMakeScale(Self.zoomScale, Self.zoomScale, 1)
+            springboard.layer.transform = zoomed
+            // Without a folder shown the original sets the same value once more (research paper
+            // §5.1); the branch for a shown folder comes with phase 5.
+            springboard.layer.transform = zoomed
+        }
         if disabled {
             CATransaction.setDisableActions(false)
         }
         CATransaction.flush()
     }
+
+    /// The main grid's scale before the open and after the close (REF-OVERLAY-001, REF-OVERLAY-004).
+    static let zoomScale: CGFloat = 1.05
 
     @objc(performEnterAnimation:)
     func performEnterAnimation(_ slow: Bool) {
@@ -585,6 +624,9 @@ class Springboard: NSObject, CALayerDelegate, ECSBDataSource {
         CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeIn))  // REF-OVERLAY-001
         CATransaction.begin()
         layer.opacity = 1  // REF-OVERLAY-001
+        if !dockGlobals.axReduceMotion {  // REF-OVERLAY-008
+            springboard.layer.transform = CATransform3DIdentity  // REF-OVERLAY-001
+        }
         CATransaction.commit()
         WAWindow.setSafeApertureOverride(0, force: false)  // REF-DEV-011
         CoreCursorSet(Int32(bitPattern: dockGlobals.dockConnection), 0)  // REF-DEV-006
@@ -602,6 +644,9 @@ class Springboard: NSObject, CALayerDelegate, ECSBDataSource {
             MainActor.assumeIsolated {
                 self._cleanupAfterExitAnimation(closingDesktopLayer.value, openCount: count)
             }
+        }
+        if !dockGlobals.axReduceMotion {  // REF-OVERLAY-008
+            springboard.layer.transform = CATransform3DMakeScale(Self.zoomScale, Self.zoomScale, 1)  // REF-OVERLAY-004
         }
         // REF-OVERLAY-004; ends at 0.01 instead of 0, so that the window never draws nothing while it
         // is on screen (REF-DEV-023).
@@ -623,6 +668,7 @@ class Springboard: NSObject, CALayerDelegate, ECSBDataSource {
             CGSSetWindowLevel(Int32(bitPattern: dockGlobals.dockConnection), containerWindow().wid(), 20)
         }
         let disabled = disableActions()
+        springboard.layer.transform = CATransform3DIdentity  // REF-OVERLAY-007
         if !_visible {
             layer.removeFromSuperlayer()
         }

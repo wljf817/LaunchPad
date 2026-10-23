@@ -114,7 +114,9 @@ extern CFTypeRef _Nullable _LSCopyFrontApplication(int32_t session) CF_RETURNS_R
 extern CFTypeRef _Nullable _LSCopyApplicationInformationItem(int32_t session, CFTypeRef asn, CFStringRef key) CF_RETURNS_RETAINED;
 extern const CFStringRef _kLSUIPresentationOptionsKey;
 
-// The system's Reduce Motion setting; Dock's accessibility monitor reads this.
+// The system's Reduce Motion setting; Dock's accessibility monitor reads this. Exported by
+// HIServices; verified callable on macOS 26.6.2 and 27.0.1, where it returned the same value as
+// NSWorkspace.accessibilityDisplayShouldReduceMotion (the setting was not changed for the check).
 extern Boolean _AXInterfaceGetReduceMotionEnabled(void);
 
 #ifdef __OBJC__

@@ -89,17 +89,6 @@ struct GridAnimationTests {
         return try #require((page.layer as? ECSBGridLayer)?.itemLayers as? [ECSBItemLayer])
     }
 
-    /// Records the implicit actions a layer asks for, with the transaction's duration and timing
-    /// function at that moment. Core Animation asks only while actions are enabled; in a test process
-    /// it adds no implicit animation itself.
-    final class ActionRecorder: NSObject, CALayerDelegate {
-        var events: [(key: String, duration: CFTimeInterval, timing: CAMediaTimingFunction?)] = []
-        func action(for layer: CALayer, forKey event: String) -> CAAction? {
-            events.append((event, CATransaction.animationDuration(), CATransaction.animationTimingFunction()))
-            return nil
-        }
-    }
-
     @Test("显示状态从 ECSBSpringboard 传到 pager 和每个 item layer，值变了才传")
     func visibilityGoesDown() throws {
         let (grid, _) = makeGrid()
@@ -148,6 +137,110 @@ struct GridAnimationTests {
         }
         #expect(recorder.events.isEmpty)
         #expect(layers.map { $0.labelLayer.string as? String } == titles)
+    }
+
+    // MARK: - The controller (REF-GRID-015, REF-OVERLAY-001, REF-OVERLAY-004, REF-OVERLAY-008)
+
+    /// What the main grid's transform is after the open's start and after the close's animation:
+    /// the identity throughout when Reduce Motion is on on this machine.
+    var zoomed: CATransform3D {
+        dockGlobals.axReduceMotion ? CATransform3DIdentity : CATransform3DMakeScale(1.05, 1.05, 1)
+    }
+
+    /// Records the implicit actions a layer asks for, with the transaction's duration and timing
+    /// function at that moment. Core Animation asks only while actions are enabled; in a test process
+    /// it adds no implicit animation itself.
+    final class ActionRecorder: NSObject, CALayerDelegate {
+        var events: [(key: String, duration: CFTimeInterval, timing: CAMediaTimingFunction?)] = []
+        func action(for layer: CALayer, forKey event: String) -> CAAction? {
+            events.append((event, CATransaction.animationDuration(), CATransaction.animationTimingFunction()))
+            return nil
+        }
+    }
+
+    @Test("进场动画让主网格回到原大小，与覆盖层同一时长和曲线")
+    func enterAnimationZoomsBack() throws {
+        let controller = Springboard()
+        let grid = controller.springboard.layer
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        grid.transform = zoomed
+        CATransaction.commit()
+        let recorder = ActionRecorder()
+        grid.delegate = recorder
+        CATransaction.begin()
+        controller.performEnterAnimation(false)
+        CATransaction.commit()
+        #expect(CATransform3DEqualToTransform(grid.transform, CATransform3DIdentity))
+        let transform = recorder.events.filter { $0.key == "transform" }
+        if dockGlobals.axReduceMotion {
+            #expect(transform.isEmpty)
+        } else {
+            let event = try #require(transform.first)
+            #expect(transform.count == 1)
+            #expect(event.duration == Springboard.animationDuration(slow: false, key: "springboard-show-duration"))
+            #expect(event.timing == CAMediaTimingFunction(name: .easeIn))  // REF-OVERLAY-001
+        }
+    }
+
+    @Test("退出动画把主网格放大到起始缩放，结束后不带动画回到原大小")
+    func exitAnimationZoomsOutAndBack() throws {
+        let controller = Springboard()
+        let grid = controller.springboard.layer
+        let recorder = ActionRecorder()
+        grid.delegate = recorder
+        CATransaction.begin()
+        controller.performExitAnimation(false)
+        CATransaction.commit()
+        #expect(CATransform3DEqualToTransform(grid.transform, zoomed))
+        let transform = recorder.events.filter { $0.key == "transform" }
+        if dockGlobals.axReduceMotion {
+            #expect(transform.isEmpty)
+        } else {
+            let event = try #require(transform.first)
+            #expect(transform.count == 1)
+            #expect(event.duration == Springboard.animationDuration(slow: false, key: "springboard-hide-duration"))
+            #expect(event.timing == CAMediaTimingFunction(name: .easeOut))  // REF-OVERLAY-004
+        }
+        recorder.events.removeAll()
+        controller._cleanupAfterExitAnimation(nil, openCount: controller.openCount)
+        #expect(CATransform3DEqualToTransform(grid.transform, CATransform3DIdentity))
+        #expect(recorder.events.isEmpty)
+    }
+
+    @Test("关闭后 5 秒释放；开着或在做手势时不释放；再安排时取消旧的")
+    func purgeTimer() async throws {
+        func makeController(_ title: String) -> (Springboard, LPApp) {
+            let controller = Springboard()
+            let root = LPRoot()
+            let page = LPPage(items: nil)
+            root.children.add(page)
+            let app = makeTestApp(title)
+            page.children.add(app)
+            controller.rootPage = root
+            root.setShouldCacheIcons(true)
+            return (controller, app)
+        }
+        let (closed, closedApp) = makeController("Closed")
+        let (shown, shownApp) = makeController("Shown")
+        let (gesture, gestureApp) = makeController("Gesture")
+        shown._visible = true
+        gesture._visibility = 0.5
+        for controller in [closed, shown, gesture] {
+            controller.purgeItemContentsLater()
+            let first = try #require(controller._purgeItemsTimer)
+            controller.purgeItemContentsLater()
+            #expect(first.isCancelled)
+            #expect(controller._purgeItemsTimer !== first)
+        }
+        try await Task.sleep(for: .seconds(4.5), tolerance: .zero)
+        #expect(closedApp._shouldCacheIcons)
+        try await Task.sleep(for: .seconds(0.8), tolerance: .zero)
+        for controller in [closed, shown, gesture] {
+            #expect(controller._purgeItemsTimer == nil)
+        }
+        #expect(!(closed.rootPage?._shouldCacheIcons ?? true) && !closedApp._shouldCacheIcons)
+        #expect(shownApp._shouldCacheIcons && gestureApp._shouldCacheIcons)
     }
 
     func solidImage(_ size: Int) -> CGImage? {
