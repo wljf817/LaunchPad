@@ -14,6 +14,8 @@ class ECGridLayer: CALayer {
     @objc let rowSpacing: UInt = 0
     @objc let columnSpacing: UInt = 0
     var numberOfItems: UInt = 0
+    /// The items whose layers last got their contents (REF-GRID-014).
+    var itemRange = NSRange(location: 0, length: 0)
     var _itemLayers = NSMutableArray(capacity: 0)
     @objc let clipLayer = CALayer()
     @objc let itemsLayer = CALayer()

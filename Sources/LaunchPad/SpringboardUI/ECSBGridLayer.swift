@@ -20,8 +20,9 @@ final class ECSBGridLayer: ECGridLayer {
 
     /// Sizes the cells from the items layer, makes an item layer for every item that has none, putting
     /// each in front of the items layer's sublayers, so they end up in reverse item order, and drops
-    /// item layers from the end when there are too many (REF-GRID-003); then places the item layers
-    /// row by row from the top (REF-GRID-008). Their contents come with 1.3.3.
+    /// item layers from the end when there are too many (REF-GRID-003); gives them their contents when
+    /// the items changed (REF-GRID-014); then places the item layers row by row from the top
+    /// (REF-GRID-008) and lays out those that did not just get their contents.
     override func _layoutItemLayers() {
         let bounds = itemsLayer.bounds
         if autoCalcSizes {
@@ -48,6 +49,13 @@ final class ECSBGridLayer: ECGridLayer {
                 count -= 1
             }
         }
+        var filled: NSArray?
+        if itemRange.location != 0 || itemRange.length != Int(numberOfItems) {
+            itemRange = NSRange(location: 0, length: Int(numberOfItems))
+            let layers: NSArray = numberOfItems == UInt(itemLayers.count) ? itemLayers : itemLayers.subarray(with: itemRange) as NSArray
+            layerSource?.setContent(inLayers: layers, withDataRange: itemRange, for: self, usingScaleFactor: scaleFactor)
+            filled = layers
+        }
         let cell = CGRect(x: 0, y: 0, width: CGFloat(columnWidth), height: CGFloat(rowHeight))
         let firstX = layoutRTL ? bounds.maxX - CGFloat(columnWidth) / 2 : CGFloat(columnWidth) / 2
         var position = CGPoint(x: firstX, y: CGFloat(Int(bounds.height)) - CGFloat(rowHeight) * 0.5)
@@ -58,6 +66,9 @@ final class ECSBGridLayer: ECGridLayer {
                 if !itemLayer.isHidden {
                     itemLayer.position = position
                     itemLayer.bounds = cell
+                    if filled == nil || filled!.indexOfObjectIdentical(to: itemLayer) == NSNotFound {
+                        (itemLayer as? ECSBItemLayer)?.layout()
+                    }
                 } else {
                     let disabled = disableActions()
                     itemLayer.isHidden = false
@@ -85,6 +96,14 @@ final class ECSBGridLayer: ECGridLayer {
             } else {
                 position.x += layoutRTL ? -CGFloat(columnWidth) : CGFloat(columnWidth)
             }
+        }
+    }
+
+    /// Reloads every item layer's icon, with its index (REF-GRID-014).
+    @objc(reloadItemContentsWithDataSource:)
+    func reloadItemContents(withDataSource dataSource: ECSBGridDataSource) {
+        for (index, element) in itemLayers.enumerated() {
+            (element as? ECSBItemLayer)?.reloadItemContents(withDataSource: dataSource, at: UInt(index))
         }
     }
 

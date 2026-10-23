@@ -27,6 +27,10 @@ class ECPager: NSObject {
         _pages
     }
 
+    @objc var currentPageIndex: UInt {
+        _layer.currentPageIndex
+    }
+
     @objc func pagerLayerClass() -> ECPagerLayer.Type {
         ECPagerLayer.self
     }

@@ -152,8 +152,17 @@ typedef struct CAColorMatrix {
 @property BOOL allowsGroupBlending;
 @end
 
+// Whether a layer takes part in hit testing. A folder icon's mini icon grid
+// does not (REF-GRID-013).
+@interface CALayer (LaunchPadHitTesting)
+@property BOOL allowsHitTesting;
+@end
+
 // The "plusL" compositing filter of the loading indicator's text (REF-GRID-002).
 extern NSString * const kCAFilterPlusL;
+
+// The compositing filter of a folder icon's tint layer (REF-GRID-013).
+extern NSString * const kCAFilterDarkenBlendMode;
 
 // LaunchServices' record of an installed app; public on iOS, not declared on macOS.
 // Tells whether a scanned app is a web app (flag 0x1000, REF-LAYOUT-003).

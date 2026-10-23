@@ -10,4 +10,18 @@ class ECSBContainerItem: ECSBItem {
         get { _items }
         set { _items = newValue }
     }
+
+    /// This item, or the first of its items, depth first, that stands for `clientItem`.
+    @objc(itemForClientItem:)
+    override func item(forClientItem clientItem: AnyObject?) -> ECSBItem? {
+        if let found = super.item(forClientItem: clientItem) {
+            return found
+        }
+        for case let item as ECSBItem in _items ?? [] {
+            if let found = item.item(forClientItem: clientItem) {
+                return found
+            }
+        }
+        return nil
+    }
 }

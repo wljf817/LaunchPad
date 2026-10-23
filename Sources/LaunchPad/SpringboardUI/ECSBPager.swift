@@ -4,6 +4,8 @@ import QuartzCore
 @MainActor
 @objc(ECSBPager)
 class ECSBPager: ECPager {
+    /// The controller (research paper §6.1); a folder asks it for its mini icons (REF-GRID-013).
+    @objc weak var handler: ECSBDataSource?
     var scaleFactor: Float = 0
 
     @objc(initWithPagerSource:scaleFactor:layoutRTL:)
@@ -18,5 +20,17 @@ class ECSBPager: ECPager {
 
     @objc override func pagerLayerClass() -> ECPagerLayer.Type {
         ECSBLayer.self
+    }
+
+    /// Reloads the item contents of every page, or of every page but the current one
+    /// (REF-GRID-014). An open folder's pages are not among them.
+    @objc(reloadItemContents:)
+    func reloadItemContents(_ exceptCurrentPage: Bool) {
+        let current = currentPageIndex < UInt(_pages.count) ? _pages[Int(currentPageIndex)] as AnyObject : nil
+        for case let page as ECSBPage in _pages {
+            if !(exceptCurrentPage && page === current) {
+                page.reloadItemContents()
+            }
+        }
     }
 }

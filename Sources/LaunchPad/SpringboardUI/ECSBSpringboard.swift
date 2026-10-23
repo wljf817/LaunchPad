@@ -26,6 +26,7 @@ final class ECSBSpringboard: NSObject, ECPagerSource {
         self.numberOfColumnsPerPage = numberOfColumnsPerPage
         super.init()
         _pager = ECSBPager(pagerSource: self, scaleFactor: scaleFactor, layoutRTL: layoutRTL)
+        _pager.handler = handler
     }
 
     @objc var pager: ECSBPager {
@@ -94,6 +95,29 @@ final class ECSBSpringboard: NSObject, ECPagerSource {
         if disabled {
             CATransaction.setDisableActions(false)
         }
+    }
+
+    /// The item that stands for a model object, searched depth first from the root item.
+    @objc(itemForClientItem:)
+    func item(forClientItem clientItem: AnyObject?) -> ECSBItem? {
+        item.item(forClientItem: clientItem)
+    }
+
+    /// A model object's value changed (REF-GRID-014): a folder's item layer takes it when the item
+    /// is in a folder; the item's own layer takes it with key-value coding.
+    @objc(setValue:forKey:ofItem:)
+    func setValue(_ value: AnyObject?, forKey key: String, ofItem clientItem: AnyObject?) {
+        guard let gridItem = item(forClientItem: clientItem) else { return }
+        let itemLayer = gridItem.itemLayer
+        if let groupItem = gridItem.parent?.parent as? ECSBGroupItem {
+            groupItem.groupItemLayer?.setValue(value, forKey: key, ofItem: gridItem)
+        }
+        itemLayer?.setValue(value, forKey: key)
+    }
+
+    @objc(reloadItemContents:)
+    func reloadItemContents(_ exceptCurrentPage: Bool) {
+        pager.reloadItemContents(exceptCurrentPage)
     }
 
     @objc func layout() {
