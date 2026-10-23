@@ -15,8 +15,8 @@ final class LaunchPadAppDelegate: NSObject, NSApplicationDelegate {
     var listener: xpc_connection_t?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Creating the Dock's visibility controller turns auto-hide back on if a previous run left
-        // it off (REF-DEV-004).
+        // Creating the Dock's visibility controller removes the Dock's override if a previous run
+        // left it on (REF-DEV-004).
         _ = dockBar.visibilityController
         // As Dock: the writing direction is read once, before the controller exists; the preferences
         // are this process's (REF-GRID-009, REF-DEV-002).

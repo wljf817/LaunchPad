@@ -60,6 +60,8 @@ class Springboard: NSObject, CALayerDelegate, ECSBDataSource {
         // REF-ARCH-008: tags 0x400 and level 20.
         window = WALayerKitWindow(frame: CGDisplayBounds(display), connection: dockGlobals.dockConnection,
                                   display: display, tags: 0x400, level: 20)
+        // REF-DEV-003: the strip's copy of the background gets an opaque background color.
+        window.opaqueLayer = desktopContainerLayer
         super.init()
         layer.delegate = self
         layer.insertSublayer(desktopContainerLayer, at: 0)

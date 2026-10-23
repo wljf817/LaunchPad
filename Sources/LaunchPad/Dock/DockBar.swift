@@ -1,6 +1,5 @@
 import CoreGraphics
 import Foundation
-import QuartzCore
 import LaunchPadPrivate
 
 /// The Dock (REF-ARCH-010). Launchpad uses its visibility controller, and its tile size, distances,
@@ -45,15 +44,11 @@ final class DockBar: NSObject {
     }
 
     private func barGeometry() -> (tileSize: Float, distanceTop: Float, distanceBottom: Float) {
-        var dock = dockRect()
-        // An auto-hidden Dock that LaunchPad has just shown at open reaches the window server 12 to
-        // 20 ms later; wait for it, at most 50 ms (REF-DEV-004, REF-DEV-019).
+        let dock = dockRect()
+        // A Dock that would hide (auto-hide) and is shown by LaunchPad's override has no rectangle in
+        // the window server; its size comes from the Dock's preference (REF-DEV-004, REF-DEV-019).
         if dock.thickness == 0, visibilityController.showOverrideFlags != 0 {
-            let start = CACurrentMediaTime()
-            while dock.thickness == 0, CACurrentMediaTime() - start < 0.05 {
-                usleep(1000)
-                dock = dockRect()
-            }
+            return Self.barGeometry(preferenceSize: CoreDockGetTileSize() * 112 + 16)
         }
         return Self.barGeometry(rectThickness: Float(dock.thickness))
     }
@@ -66,6 +61,16 @@ final class DockBar: NSObject {
         var orientation: Int32 = 0
         SLSGetDockRectWithOrientation(CGSMainConnectionID(), &rect, &reason, &orientation)
         return (orientation == 3 || orientation == 4 ? rect.width : rect.height, orientation)
+    }
+
+    /// The original Dock's tile size and distances for a bar of the preference's size that does not
+    /// shrink: the tile size is the preference's size plus twice the tile inset, and the distances
+    /// follow from the tile size (REF-DEV-019).
+    static func barGeometry(preferenceSize: Float) -> (tileSize: Float, distanceTop: Float, distanceBottom: Float) {
+        let inset: Float = preferenceSize + 6 > 127 ? 3 : preferenceSize + 4 > 47 ? 2 : 1
+        let tileSize = preferenceSize + 2 * inset
+        let base: Float = tileSize > 127 ? 6 : tileSize > 47 ? 5 : tileSize > 23 ? 4 : 3
+        return (tileSize, base - 2 * inset, tileSize > 47 ? 10 : 7)
     }
 
     /// The Dock's thickness is its rectangle's less 6, split into the tile size and the distances by the

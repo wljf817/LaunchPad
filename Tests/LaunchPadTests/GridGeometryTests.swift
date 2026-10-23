@@ -295,6 +295,19 @@ struct GridGeometryTests {
 
     // MARK: - The Dock (REF-DEV-019)
 
+    @Test("没有矩形时按偏好的尺寸：瓦片大小加两倍内边距，距离与原版 Dock 的表相同")
+    func dockGeometryFromPreference() {
+        // REF-DEV-019: the original Dock's tile size and distances measured on macOS 15.6.1 for
+        // preference sizes at which the bar did not shrink.
+        let measured: [(size: Float, tileSize: Float, top: Float, bottom: Float)] = [
+            (16, 18, 1, 7), (24, 26, 2, 7), (32, 34, 2, 7), (40, 42, 2, 7), (48, 52, 1, 10),
+        ]
+        for (size, tileSize, top, bottom) in measured {
+            let geometry = DockBar.barGeometry(preferenceSize: size)
+            #expect(geometry == (tileSize, top, bottom), "\(size)")
+        }
+    }
+
     @Test("Dock 的厚度从矩形换算，拆分与原版 Dock 的表相同")
     func dockThickness() {
         // REF-DEV-019: rectangles measured on macOS 15.6.1 and the original's tile size and distances.

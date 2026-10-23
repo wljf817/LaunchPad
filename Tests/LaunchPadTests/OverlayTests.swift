@@ -59,6 +59,27 @@ import Testing
         #expect(rootCopy.sublayers == nil)
     }
 
+    @Test("不透明的 layer 的副本有不透明的背景色，其余副本照原树")
+    func opaqueLayerCopyHasBackground() throws {
+        let window = makeWindow()
+        let opaque = CALayer()
+        let other = CALayer()
+        window.opaqueLayer = opaque
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        window.layer.addSublayer(opaque)
+        window.layer.addSublayer(other)
+        CATransaction.commit()
+        // The window's creation left an implicit transaction open; the commit handlers run when it commits.
+        CATransaction.flush()
+
+        let copies = try #require(window.stripLayer.sublayers?.first?.sublayers)
+        #expect(copies.count == 2)
+        #expect(copies[0].backgroundColor?.alpha == 1)
+        #expect(opaque.backgroundColor == nil)
+        #expect(copies[1].backgroundColor == nil)
+    }
+
     @Test("副本的动画与原树的同键、同时长、同曲线，同一次提交开始")
     func copyTakesAnimations() throws {
         let window = makeWindow()
@@ -114,6 +135,26 @@ import Testing
         let rootCopy = try #require(window.stripLayer.sublayers?.first)
         let mainFrame = try #require(window.mainWindow?.frame)
         #expect(rootCopy.position.y == window.layer.position.y + mainFrame.minY - stripWindow.frame.minY)
+    }
+
+    @Test("帧没变但窗口按 0 高的窄条摆着时，按菜单栏现在的高度重摆")
+    func setFrameFollowsMenuBarHeight() throws {
+        let window = makeWindow()
+        let frame = CGDisplayBounds(CGMainDisplayID())
+        let (main, strip) = WALayerKitWindow.windowFrames(for: frame)
+        try #require(strip.height > 0)
+        // As at login, before the menu bar's height was known.
+        let stripWindow = try #require(window.stripWindow)
+        let mainWindow = try #require(window.mainWindow)
+        stripWindow.setFrame(WALayerKitWindow.appKitRect(CGRect(x: frame.minX, y: frame.minY, width: frame.width, height: 0)),
+                             display: false)
+        mainWindow.setFrame(WALayerKitWindow.appKitRect(frame), display: false)
+
+        window.setFrame(frame)
+        CATransaction.flush()
+
+        #expect(stripWindow.frame == WALayerKitWindow.appKitRect(strip))
+        #expect(mainWindow.frame == WALayerKitWindow.appKitRect(main))
     }
 
     func makeWindow() -> WALayerKitWindow {

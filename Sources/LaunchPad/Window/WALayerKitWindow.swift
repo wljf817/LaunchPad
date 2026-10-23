@@ -18,8 +18,12 @@ final class WALayerKitWindow: WAWindow {
     var observations: [ObjectIdentifier: [NSKeyValueObservation]] = [:]
     /// Whether a sync is registered for the current transaction's commit.
     var copySyncScheduled = false
-    /// The AppKit frames the two windows were last given.
-    var appKitFrames: (main: NSRect, strip: NSRect) = (.zero, .zero)
+    /// A layer of the tree whose content is opaque wherever the strip shows it: the overlay's
+    /// background container. Its copy gets an opaque background color, which that content covers. On
+    /// macOS 27.0.1, without a layer with a background color in the strip, the window server stops
+    /// showing the strip at the next change of the menu bar's content, while the strip shows the
+    /// blurred background (REF-DEV-003).
+    weak var opaqueLayer: CALayer?
 
     /// The tag bits `WALayerKitWindow` adds to every window it creates (REF-ARCH-008).
     static let addedTags: UInt64 = 0x1000 | 0x80_0000 | 0x80_0000_0000_0000
@@ -30,10 +34,9 @@ final class WALayerKitWindow: WAWindow {
         super.init()
         _frame = frame
         let (main, strip) = Self.windowFrames(for: frame)
-        appKitFrames = (Self.appKitRect(main), Self.appKitRect(strip))
         // REF-DEV-003: the main window stays below the Dock's window, at level 20.
-        mainWindow = LaunchPadWindow(contentRect: appKitFrames.main, hosting: layer, level: 19)
-        stripWindow = LaunchPadWindow(contentRect: appKitFrames.strip, hosting: stripLayer, level: level)
+        mainWindow = LaunchPadWindow(contentRect: Self.appKitRect(main), hosting: layer, level: 19)
+        stripWindow = LaunchPadWindow(contentRect: Self.appKitRect(strip), hosting: stripLayer, level: level)
         var allTags = tags | Self.addedTags
         for window in [mainWindow, stripWindow] {
             guard let window else { continue }
@@ -43,17 +46,19 @@ final class WALayerKitWindow: WAWindow {
     }
 
     /// Sets the frame (global coordinates) of both windows. Does nothing when it is unchanged and both
-    /// windows are still where it put them: unlike the original's window-server window, AppKit can move
-    /// them by itself (the strip has been found below the menu bar's area while ordered out).
+    /// windows are at the frames the active space's menu bar now gives: unlike the original's
+    /// window-server window, AppKit can move them by itself (the strip has been found below the menu
+    /// bar's area while ordered out), and the menu bar's height may not have been known when the frames
+    /// were last set (at login the strip was left 0 high).
     @objc(setFrame:)
     func setFrame(_ frame: CGRect) {
-        guard frame != _frame || mainWindow?.frame != appKitFrames.main || stripWindow?.frame != appKitFrames.strip
+        let (main, strip) = Self.windowFrames(for: frame)
+        let frames = (main: Self.appKitRect(main), strip: Self.appKitRect(strip))
+        guard frame != _frame || mainWindow?.frame != frames.main || stripWindow?.frame != frames.strip
         else { return }
         _frame = frame
-        let (main, strip) = Self.windowFrames(for: frame)
-        appKitFrames = (Self.appKitRect(main), Self.appKitRect(strip))
-        mainWindow?.setFrame(appKitFrames.main, display: false)
-        stripWindow?.setFrame(appKitFrames.strip, display: false)
+        mainWindow?.setFrame(frames.main, display: false)
+        stripWindow?.setFrame(frames.strip, display: false)
         copyNeedsSync()
     }
 
@@ -77,13 +82,20 @@ final class WALayerKitWindow: WAWindow {
         return (main, strip)
     }
 
-    /// The height of the window server's menu bar window on the display at `frame`.
+    /// The height of the window server's menu bar window of the active space on the display at
+    /// `frame`, shown or not: in a full-screen app's space the menu bar is off screen until it is
+    /// shown over the strip's area.
     static func menuBarHeight(in frame: CGRect) -> CGFloat {
-        let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
+        let connection = CGSMainConnectionID()
+        let space = NSNumber(value: CGSGetActiveSpace(connection))
+        let windows = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String: Any]] ?? []
         for info in windows where info[kCGWindowName as String] as? String == "Menubar" {
             guard let bounds = info[kCGWindowBounds as String] as? NSDictionary,
                   let rect = CGRect(dictionaryRepresentation: bounds),
-                  frame.contains(CGPoint(x: rect.midX, y: rect.midY)) else { continue }
+                  rect.minX == frame.minX, rect.width == frame.width,
+                  let number = info[kCGWindowNumber as String] as? NSNumber,
+                  let windowSpaces = CGSCopySpacesForWindows(connection, 7, [number] as CFArray) as? [NSNumber],
+                  windowSpaces.contains(space) else { continue }
             return rect.height
         }
         return 0
@@ -176,7 +188,7 @@ final class WALayerKitWindow: WAWindow {
         copy.masksToBounds = source.masksToBounds
         copy.isDoubleSided = source.isDoubleSided
         copy.cornerRadius = source.cornerRadius
-        copy.backgroundColor = source.backgroundColor
+        copy.backgroundColor = source === opaqueLayer ? CGColor(gray: 0, alpha: 1) : source.backgroundColor
         copy.borderWidth = source.borderWidth
         copy.borderColor = source.borderColor
         copy.shadowOpacity = source.shadowOpacity

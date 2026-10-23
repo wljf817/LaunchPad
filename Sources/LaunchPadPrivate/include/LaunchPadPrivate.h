@@ -91,16 +91,22 @@ extern CFArrayRef _Nullable CGSHWCaptureWindowList(CGSConnectionID cid, CGSWindo
 extern bool CGSManagedDisplayIsAnimating(CGSConnectionID cid, CFStringRef displayUUID);
 extern uint64_t CGSGetActiveSpace(CGSConnectionID cid);
 extern CFArrayRef _Nullable CGSCopyManagedDisplaySpaces(CGSConnectionID cid) CF_RETURNS_RETAINED;
+// The spaces a window belongs to (mask 7: every kind of space), as an array of
+// space ids. The strip over the menu bar takes its height from the active
+// space's menu bar window (REF-DEV-003). 27.0.1 and 26.6.2.
+extern CFArrayRef _Nullable CGSCopySpacesForWindows(CGSConnectionID cid, int32_t mask, CFArrayRef wids) CF_RETURNS_RETAINED;
 
 // Keyboard focus without activating the process (REF-OVERLAY-007).
 extern CGError CPSStealKeyFocusOnConnection(CGSConnectionID cid, uint32_t flags);
 extern CGError CPSReleaseKeyFocusOnConnection(CGSConnectionID cid);
 
 // Dock: a notification to the Dock's message server (Mission Control's toggle,
-// REF-DEV-005) and the auto-hide preference (REF-DEV-004). 26.6.2 only.
+// REF-DEV-005), 26.6.2 only; and the tile size (REF-DEV-004), the Dock's
+// preference size as (size - 16) / 112, set with a flag that says whether the
+// change is finished: while it is not, the Dock shows itself. 26.6.2 and 27.0.1.
 extern void CoreDockSendNotification(CFStringRef name, CFTypeRef _Nullable unknown);
-extern Boolean CoreDockGetAutoHideEnabled(void);
-extern void CoreDockSetAutoHideEnabled(Boolean enabled);
+extern float CoreDockGetTileSize(void);
+extern void CoreDockSetTileSize(float size, int32_t finished);
 
 // The frontmost app's presentation options in LaunchServices, for the
 // process-switching guard (REF-DEV-007). 26.6.2 only.
