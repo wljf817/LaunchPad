@@ -73,4 +73,9 @@ class ECSBPage: ECPage, ECLayerSource, ECSBGridDataSource {
     @objc func reloadItemContents() {
         (layer as? ECSBGridLayer)?.reloadItemContents(withDataSource: self)
     }
+
+    /// Drops its item layers' icons (REF-GRID-015).
+    @objc func purgeItemContents() {
+        (layer as? ECSBGridLayer)?.purgeItemContents()
+    }
 }

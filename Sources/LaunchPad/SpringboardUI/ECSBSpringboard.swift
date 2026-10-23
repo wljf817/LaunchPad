@@ -15,6 +15,7 @@ final class ECSBSpringboard: NSObject, ECPagerSource {
     var _pager: ECSBPager!
     var scaleFactor: Float
     var layoutRTL: Bool
+    var _visible = false
 
     @objc(initWithHandler:numberOfRowsPerPage:numberOfColumnsPerPage:scaleFactor:layoutRTL:)
     init(handler: ECSBDataSource, numberOfRowsPerPage: UInt, numberOfColumnsPerPage: UInt, scaleFactor: Float,
@@ -118,6 +119,23 @@ final class ECSBSpringboard: NSObject, ECPagerSource {
     @objc(reloadItemContents:)
     func reloadItemContents(_ exceptCurrentPage: Bool) {
         pager.reloadItemContents(exceptCurrentPage)
+    }
+
+    /// Drops the item layers' icon contents (REF-GRID-015).
+    @objc(purgeItemContents:)
+    func purgeItemContents(_ exceptCurrentPage: Bool) {
+        pager.purgeItemContents(exceptCurrentPage)
+    }
+
+    @objc var visible: Bool { _visible }
+
+    /// The overlay was shown or hidden: passed on to the pager (REF-GRID-015). Clearing the selected
+    /// and dragged-over items and the pager layer's timers come with phases 2 to 4.
+    @objc(setVisible:)
+    func setVisible(_ visible: Bool) {
+        guard _visible != visible else { return }
+        _visible = visible
+        pager.setVisible(visible)
     }
 
     @objc func layout() {

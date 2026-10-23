@@ -107,6 +107,13 @@ final class ECSBGridLayer: ECGridLayer {
         }
     }
 
+    /// Drops every item layer's icon (REF-GRID-015).
+    @objc func purgeItemContents() {
+        for case let itemLayer as ECSBItemLayer in itemLayers {
+            itemLayer.purgeItemContents()
+        }
+    }
+
     /// The icon size and the folder's mini icon size for a cell of a grid of `bounds` (REF-GRID-006).
     @objc(calculateIconSize:miniIconSize:forBounds:andScaleFactor:withNumberOfRows:andColumns:)
     static func calculateIconSize(_ iconSize: UnsafeMutablePointer<UInt>, miniIconSize: UnsafeMutablePointer<UInt>,

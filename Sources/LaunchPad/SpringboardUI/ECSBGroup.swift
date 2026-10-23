@@ -37,6 +37,15 @@ final class ECSBGroup: NSObject, ECLayerSource, ECLayerSourceClient {
         }
     }
 
+    /// The original drops the open folder's pager contents here (REF-GRID-015); a folder has no pager
+    /// of its own before phase 5, so only the transaction's actions are touched.
+    @objc func purgeItemContents() {
+        let disabled = disableActions()
+        if disabled {
+            CATransaction.setDisableActions(false)
+        }
+    }
+
     @objc func setScaleFactor(_ scaleFactor: Float) {
         if self.scaleFactor != scaleFactor {
             self.scaleFactor = scaleFactor

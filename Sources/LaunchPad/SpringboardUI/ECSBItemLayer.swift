@@ -22,6 +22,7 @@ class ECSBItemLayer: CALayer, ECSBGridItemSource {
     var magnified = false
     /// Set while the contents are being set, so that the layout runs once after them.
     var internalDisableLayout = false
+    var _visible = false
 
     @objc(initWithScaleFactor:layoutRTL:)
     init(scaleFactor: Float, layoutRTL: Bool) {
@@ -49,6 +50,26 @@ class ECSBItemLayer: CALayer, ECSBGridItemSource {
     @objc var backdropLayer: CALayer? { _backdropLayer }
 
     @objc var isGroupItem: Bool { false }
+
+    // MARK: - Visibility and purging (REF-GRID-015)
+
+    @objc var visible: Bool { _visible }
+
+    /// The flagged state of new and beta items, which the original changes here, comes with phase 6.
+    @objc(setVisible:)
+    func setVisible(_ visible: Bool) {
+        guard _visible != visible else { return }
+        _visible = visible
+    }
+
+    /// Drops the icon; the name stays.
+    @objc func purgeItemContents() {
+        let disabled = disableActions()
+        imageLayer.contents = nil
+        if disabled {
+            CATransaction.setDisableActions(false)
+        }
+    }
 
     // MARK: - Contents (REF-GRID-014)
 

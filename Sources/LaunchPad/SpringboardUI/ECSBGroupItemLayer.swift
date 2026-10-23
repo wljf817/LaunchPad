@@ -65,6 +65,22 @@ final class ECSBGroupItemLayer: ECSBItemLayer {
         }
     }
 
+    /// Drops the icon, the open folder's contents and every mini icon (REF-GRID-015).
+    @objc override func purgeItemContents() {
+        let disabled = disableActions()
+        imageLayer.contents = nil
+        _group?.purgeItemContents()
+        let count = miniGridLayer.numberOfItems
+        var index: UInt = 0
+        while index < count {
+            miniGridLayer.itemLayer(at: index)?.contents = nil
+            index += 1
+        }
+        if disabled {
+            CATransaction.setDisableActions(false)
+        }
+    }
+
     /// A mini icon that changed: the layer of that app on the folder's first page (REF-GRID-014).
     @objc(setValue:forKey:ofItem:)
     func setValue(_ value: AnyObject?, forKey key: String, ofItem item: ECSBItem?) {
