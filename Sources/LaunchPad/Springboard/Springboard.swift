@@ -23,6 +23,10 @@ class Springboard: NSObject, CALayerDelegate, ECSBDataSource {
     var springboard: ECSBSpringboard!
     var iconSize: UInt = 0
     var miniIconSize: UInt = 0
+    /// The model items observed for their names and icons (REF-GRID-014).
+    var observedItems: NSMutableSet?
+    /// The properties that changed while the overlay was closed, by item (weak keys).
+    var staleProperties: NSMapTable<AnyObject, NSMutableSet>?
     var appManager: LPAppManager?
     var appLayout: LPLayout?
     var rootPage: LPRoot?
@@ -31,8 +35,10 @@ class Springboard: NSObject, CALayerDelegate, ECSBDataSource {
     var loadingLayer: ECShadowTextLayer?
     var _deferLayout = false
     var scanningComplete = false
+    var ensuringSize = false
 
     nonisolated(unsafe) private static var scanningContext = 0
+    nonisolated(unsafe) private static var itemContext = 0
 
     override init() {
         layer = CALayer()
@@ -133,6 +139,18 @@ class Springboard: NSObject, CALayerDelegate, ECSBDataSource {
 
     override nonisolated func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey: Any]?,
                                            context: UnsafeMutableRawPointer?) {
+        if context == &Self.itemContext {
+            let item = UncheckedBox(object as AnyObject?)
+            MainActor.assumeIsolated {
+                // REF-GRID-014: an item in the tree; a progress change also refreshes its folder.
+                guard let item = item.value as? LPItem, let keyPath, let parent = item.parentContainer else { return }
+                _refreshItem(item, property: keyPath)
+                if keyPath == "progress", type(of: parent) == LPGroup.self {
+                    _refreshItem(parent, property: "progress")
+                }
+            }
+            return
+        }
         guard context == &Self.scanningContext else {
             super.observeValue(forKeyPath: keyPath, of: object, change: change, context: context)
             return
@@ -196,8 +214,15 @@ class Springboard: NSObject, CALayerDelegate, ECSBDataSource {
         }
         rootPage?.purgePurgatory()
         appManager?.storage?.markInitialSetupComplete()
-        // The startup time is reported for analytics here (not done in this project); icons are
-        // requested and every item observed, and the layout's blocks set (1.3.3, phase 6).
+        // The startup time is reported for analytics here (not done in this project). Every app's
+        // icons are requested and every item observed (REF-GRID-014); the layout's blocks are set
+        // here too (phase 6).
+        rootPage?.iterateChildren { item, _ in
+            if let runnable = item as? LPRunnable {
+                _requestImagesForRunnable(runnable)
+            }
+            registerObservationOfItem(item)
+        }
         _removeLoadingLayer()
         springboard.invalidate()
         scanningComplete = true
@@ -286,7 +311,8 @@ class Springboard: NSObject, CALayerDelegate, ECSBDataSource {
         if disabled {
             CATransaction.setDisableActions(false)
         }
-        // Telling the grid that the sizes changed comes with the icons (1.3.3).
+        // When the sizes changed again, -iconSizesChanged follows; it only touches Dock extras' icons
+        // (phase 6, research paper §6.4).
         if iconSize != newIconSize || miniIconSize != newMiniIconSize {
             iconSize = newIconSize
             miniIconSize = newMiniIconSize
@@ -366,10 +392,89 @@ class Springboard: NSObject, CALayerDelegate, ECSBDataSource {
         CATransaction.commit()
     }
 
+    // MARK: - Icons and names (REF-GRID-012, REF-GRID-014)
+
+    /// Lays out once to work out the icon sizes when they are still unknown.
+    @objc func _ensureIconSizes() {
+        guard iconSize == 0, !ensuringSize else { return }
+        ensuringSize = true
+        layout()
+        ensuringSize = false
+    }
+
+    @objc(_requestImagesForRunnable:)
+    func _requestImagesForRunnable(_ runnable: LPRunnable) {
+        _ensureIconSizes()
+        runnable.retrieveImageOfLargeSize(iconSize, andMiniSize: miniIconSize)
+    }
+
+    /// Observes an item's name and icons, once. The other key paths come with phase 6.
+    @objc(registerObservationOfItem:)
+    @discardableResult
+    func registerObservationOfItem(_ item: LPItem) -> Bool {
+        if observedItems == nil {
+            observedItems = NSMutableSet()
+        }
+        guard let observedItems, !observedItems.contains(item) else { return false }
+        for keyPath in ["title", "icon", "miniIcon"] {
+            item.addObserver(self, forKeyPath: keyPath, options: [], context: &Self.itemContext)
+        }
+        observedItems.add(item)
+        return true
+    }
+
+    /// While the overlay is closed, notes the property; while it is open, hands the item's value to
+    /// the grid: the title for a missing title, the placeholder for a missing icon.
+    @objc(_refreshItem:property:)
+    func _refreshItem(_ item: LPItem, property: String) {
+        guard !(item is LPPage) else { return }
+        guard _visible else {
+            if staleProperties == nil {
+                staleProperties = NSMapTable.weakToStrongObjects()
+            }
+            let properties = staleProperties?.object(forKey: item) ?? {
+                let set = NSMutableSet()
+                staleProperties?.setObject(set, forKey: item)
+                return set
+            }()
+            properties.add(property)
+            return
+        }
+        var value = item.value(forKey: property) as AnyObject?
+        if value == nil {
+            if property == "title" {
+                value = item.title as NSString?
+            } else if property == "icon" || property == "miniIcon" {
+                value = placeholderIcon(size: property == "icon" ? iconSize : miniIconSize)
+            }
+        }
+        springboard.setValue(value, forKey: property, ofItem: item)
+    }
+
+    /// Applies what changed while the overlay was closed, then forgets it.
+    @objc func processPendingUpdates() {
+        guard let staleProperties, staleProperties.count != 0 else { return }
+        for case let item as LPItem in staleProperties.keyEnumerator().allObjects {
+            guard let properties = staleProperties.object(forKey: item)?.copy() as? NSSet else { continue }
+            for case let property as String in properties {
+                _refreshItem(item, property: property)
+            }
+        }
+        staleProperties.removeAllObjects()
+    }
+
+    /// The icon shown while an item has none yet, at a pixel size and the display's scale factor.
+    private func placeholderIcon(size: UInt) -> AnyObject? {
+        let entry = ECSizedIconImageCache.entry(withIcon: nil, forSize: Int32(truncatingIfNeeded: size),
+                                                andScaleFactor: Float(Self.scaleFactor(of: display())))
+        return entry?.image
+    }
+
     // MARK: - ECSBDataSource
 
-    /// `items` and `kind`, the keys the item tree is built from (research paper §6.1). The other keys
-    /// (icons, titles, progress, status) and the search pages come with later sub-phases.
+    /// `items` and `kind` build the item tree (research paper §6.1); `icon`, `miniIcon` and `title`
+    /// fill the item layers, the icons only while the overlay is open (REF-GRID-014). The other keys
+    /// (progress, status and the flags) and the search pages come with later phases.
     func value(forKey key: String, ofItem item: AnyObject?, withInfo info: AnyObject?) -> AnyObject? {
         guard let item else {
             return key == "items" ? rootPage?.children : nil
@@ -382,6 +487,16 @@ class Springboard: NSObject, CALayerDelegate, ECSBDataSource {
                 return "page" as NSString
             }
             return (item is LPGroup ? "group" : "item") as NSString
+        case "icon", "miniIcon":
+            guard _visible, let modelItem = item as? LPItem else { return nil }
+            _ensureIconSizes()
+            if let runnable = item as? LPRunnable {
+                runnable.retrieveImageOfLargeSize(iconSize, andMiniSize: miniIconSize)
+            }
+            let icon = key == "icon" ? modelItem.icon : modelItem.miniIcon
+            return icon ?? placeholderIcon(size: key == "icon" ? iconSize : miniIconSize)
+        case "title":
+            return (item as? LPItem)?.title as NSString?
         default:
             return nil
         }
@@ -410,11 +525,15 @@ class Springboard: NSObject, CALayerDelegate, ECSBDataSource {
         _visible = visible
         if visible {
             _deferLayout = false
-            // Icon caching, the display check and the item contents come here too (1.3.3, 1.6).
+            // Icon caching and the display check come here too (1.3.4, 1.6).
             springboard.zoomFactor = getZoomFactorFromPrefs()  // REF-GRID-005
+            springboard.reloadItemContents(false)  // REF-GRID-014
             layout()
         }
         _enterExitAnimation(visible, slow: slow)
+        if visible {
+            processPendingUpdates()  // REF-GRID-014
+        }
     }
 
     @objc(_enterExitAnimation:slow:)
