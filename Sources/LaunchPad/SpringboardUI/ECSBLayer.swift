@@ -5,10 +5,12 @@ import QuartzCore
 /// drops the pages no page item refers to any more (research paper §6.2).
 @MainActor
 @objc(ECSBLayer)
-class ECSBLayer: ECPagerLayer {
+class ECSBLayer: ECPagerLayer, ECEventHandlingDelegate {
     var _zoomFactor: CGFloat = 0.5  // REF-GRID-005
     @objc var zoomStyle = 0
     var scaleFactor: Float = 0
+    var leftMouseDown = false
+    var mouseDragged = false
 
     @objc(initWithPager:scaleFactor:layoutRTL:)
     required init(pager: ECPager?, scaleFactor: Float, layoutRTL: Bool) {
@@ -140,5 +142,43 @@ class ECSBLayer: ECPagerLayer {
                                         forBounds: CGRect(x: 0, y: 0, width: bounds.width - (left + right),
                                                           height: height - (top + bottom)),
                                         andScaleFactor: scaleFactor, withNumberOfRows: rows, andColumns: columns)
+    }
+
+    // MARK: - Events (REF-OVERLAY-010)
+
+    /// The shown folder's branch is phase 5.
+    @objc(leftMouseDown:)
+    override func leftMouseDown(_ event: ECEvent) -> Bool {
+        mouseDragged = false
+        leftMouseDown = true
+        return super.leftMouseDown(event)
+    }
+
+    /// Marks the press as dragged once the pointer is 3 points from it on either axis
+    /// (REF-OVERLAY-010).
+    @objc(leftMouseDragged:)
+    override func leftMouseDragged(_ event: ECEvent) -> Bool {
+        if !mouseDragged {
+            let location = event.location
+            if abs(startLocation.x - location.x) >= 3 || abs(startLocation.y - location.y) >= 3 {  // REF-OVERLAY-010
+                mouseDragged = true
+            }
+        }
+        return super.leftMouseDragged(event)
+    }
+
+    /// A press that was not dragged cancels: the grid action handler passes it on to the controller
+    /// (REF-OVERLAY-010). The folder conditions are phase 5.
+    @objc(leftMouseUp:)
+    override func leftMouseUp(_ event: ECEvent) -> Bool {
+        let pressed = leftMouseDown
+        leftMouseDown = false
+        let handled = super.leftMouseUp(event)
+        if pressed, !mouseDragged, let handler = (pager as? ECSBPager)?.gridActionHandler,
+           handler.responds(to: #selector(ECSBGridActionHandling.cancelGridAction(with:sender:))) {
+            handler.cancelGridAction?(with: event, sender: self)
+        }
+        mouseDragged = false
+        return handled
     }
 }

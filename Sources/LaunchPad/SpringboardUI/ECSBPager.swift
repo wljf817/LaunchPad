@@ -6,6 +6,8 @@ import QuartzCore
 class ECSBPager: ECPager {
     /// The controller (research paper §6.1); a folder asks it for its mini icons (REF-GRID-013).
     @objc weak var handler: ECSBDataSource?
+    /// Handles the actions on the grid: `ECSBSpringboard` (REF-OVERLAY-010).
+    @objc weak var gridActionHandler: ECSBGridActionHandling?
     var scaleFactor: Float = 0
     var _visible = false
 

@@ -4,7 +4,7 @@ import QuartzCore
 /// (REF-ARCH-007, research paper §6.2).
 @MainActor
 @objc(ECPagerLayer)
-class ECPagerLayer: CALayer {
+class ECPagerLayer: CALayer, ECEventHandling {
     weak var pager: ECPager?
     @objc let scrollLayer = CAScrollLayer()
     // REF-GRID-007: 10 on each side until the controller sets them.
@@ -17,6 +17,11 @@ class ECPagerLayer: CALayer {
     /// 2 for the main grid (REF-GRID-007).
     @objc private(set) var pagerControlVisibility = 2
     var layoutRTL = false
+    /// Where the left button was pressed, and the last location and time seen (research paper §4).
+    var startLocation: CGPoint = .zero
+    var lastLocation: CGPoint = .zero
+    var lastTime: UInt64 = 0
+    var isDragScrolling = false
 
     @objc(initWithPager:layoutRTL:)
     required init(pager: ECPager?, layoutRTL: Bool) {
@@ -34,6 +39,32 @@ class ECPagerLayer: CALayer {
 
     nonisolated required init?(coder: NSCoder) {
         super.init(coder: coder)
+    }
+
+    // MARK: - Events (research paper §4)
+
+    /// Records where the press started. The start scroll value comes with the drag scrolling
+    /// (phase 2).
+    @objc(leftMouseDown:)
+    func leftMouseDown(_ event: ECEvent) -> Bool {
+        startLocation = event.location
+        lastLocation = startLocation
+        lastTime = event.time
+        isDragScrolling = false
+        return true
+    }
+
+    /// Drag scrolling is phase 2.
+    @objc(leftMouseDragged:)
+    func leftMouseDragged(_ event: ECEvent) -> Bool {
+        true
+    }
+
+    /// Ends a drag scroll (choosing the page is phase 2).
+    @objc(leftMouseUp:)
+    func leftMouseUp(_ event: ECEvent) -> Bool {
+        isDragScrolling = false
+        return true
     }
 
     @objc func invalidate() {

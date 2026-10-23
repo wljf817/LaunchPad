@@ -373,6 +373,65 @@ final class RecordingSpringboard: Springboard {
 }
 
 @MainActor
+@Suite(.serialized) struct GridClickTests {
+    let springboard = RecordingSpringboard()
+    let controller = ECModalEventController()
+
+    init() {
+        springboard._visible = true
+        let root = springboard.containerWindow().layer
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        springboard.layer.frame = root.bounds
+        root.addSublayer(springboard.layer)
+        springboard.springboard.layer.frame = CGRect(x: 100, y: 100, width: 600, height: 400)
+        CATransaction.commit()
+        controller.addHandler(springboard, externalEventSource: true, usingMouseHysteresis: true)
+    }
+
+    /// The global location of `point` in the overlay container's coordinates (REF-OVERLAY-009).
+    func global(_ point: CGPoint) -> CGPoint {
+        let frame = springboard.containerWindow().frame()
+        return CGPoint(x: frame.minX + point.x, y: frame.minY + frame.height - 1 - point.y)
+    }
+
+    func send(_ type: CGEventType, _ point: CGPoint) {
+        var windows = [springboard.containerWindow()]
+        var layers = [springboard.layer]
+        controller.handleEvent(mouseEvent(type, at: global(point)), windows: &windows, topLayers: &layers, windowCount: 1)
+    }
+
+    @Test("没有移动的单击走到 cancelActionWithEvent:sender: 并关闭")
+    func click() {
+        send(.leftMouseDown, CGPoint(x: 300, y: 300))
+        #expect(springboard.reasons.isEmpty)
+        send(.leftMouseUp, CGPoint(x: 300, y: 300))
+        #expect(springboard.reasons == ["cancel action while visible"])
+    }
+
+    @Test("横向或纵向移动 3 点后松开不关闭，差一点时关闭")
+    func dragThreshold() {
+        send(.leftMouseDown, CGPoint(x: 300, y: 300))
+        send(.leftMouseDragged, CGPoint(x: 303, y: 300))
+        send(.leftMouseUp, CGPoint(x: 303, y: 300))
+        send(.leftMouseDown, CGPoint(x: 300, y: 300))
+        send(.leftMouseDragged, CGPoint(x: 300, y: 297))
+        send(.leftMouseUp, CGPoint(x: 300, y: 297))
+        #expect(springboard.reasons.isEmpty)
+        send(.leftMouseDown, CGPoint(x: 300, y: 300))
+        send(.leftMouseDragged, CGPoint(x: 302.5, y: 302.5))
+        send(.leftMouseUp, CGPoint(x: 302.5, y: 302.5))
+        #expect(springboard.reasons == ["cancel action while visible"])
+    }
+
+    @Test("点在 ECSBLayer 以外时由 -[Springboard leftMouseDown:] 关闭")
+    func outsideGrid() {
+        send(.leftMouseDown, CGPoint(x: 20, y: 700))
+        #expect(springboard.reasons == ["left mouse down outside Dock"])
+    }
+}
+
+@MainActor
 @Suite(.serialized) struct DockSideCloseTests {
     let springboard = RecordingSpringboard()
 

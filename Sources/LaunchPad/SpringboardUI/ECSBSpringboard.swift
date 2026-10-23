@@ -6,7 +6,7 @@ import QuartzCore
 /// data source protocol (REF-ARCH-013).
 @MainActor
 @objc(ECSBSpringboard)
-final class ECSBSpringboard: NSObject, ECPagerSource {
+final class ECSBSpringboard: NSObject, ECPagerSource, ECSBGridActionHandling, ECEventHandling {
     /// The controller. It holds this object too; neither is released (REF-ARCH-006).
     @objc var handler: ECSBDataSource
     let item = ECSBSpringboardItem()
@@ -27,7 +27,17 @@ final class ECSBSpringboard: NSObject, ECPagerSource {
         self.numberOfColumnsPerPage = numberOfColumnsPerPage
         super.init()
         _pager = ECSBPager(pagerSource: self, scaleFactor: scaleFactor, layoutRTL: layoutRTL)
+        _pager.gridActionHandler = self
         _pager.handler = handler
+    }
+
+    /// A click on the grid that was not on an item: passed on to the controller (REF-OVERLAY-010).
+    @objc(cancelGridActionWithEvent:sender:)
+    func cancelGridAction(with event: ECEvent?, sender: AnyObject?) {
+        if let handler = handler as? ECSBActionHandling,
+           handler.responds(to: #selector(ECSBActionHandling.cancelAction(with:sender:))) {
+            handler.cancelAction?(with: event, sender: sender)
+        }
     }
 
     @objc var pager: ECSBPager {
