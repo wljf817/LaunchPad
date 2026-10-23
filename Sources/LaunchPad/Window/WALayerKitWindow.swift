@@ -134,26 +134,69 @@ final class WALayerKitWindow: WAWindow {
     }
 
     /// Brings the copy of the tree up to date: structure, the properties that affect drawing, and
-    /// the animations.
+    /// the animations. Only the layers that can reach the strip's band are copied: the rest of the
+    /// tree is never shown there, and syncing all of it at every commit made the open slower than the
+    /// original's.
     func syncCopy() {
         copySyncScheduled = false
         var visited = Set<ObjectIdentifier>()
         let rootCopy = copy(of: layer)
-        sync(layer, into: rootCopy, visited: &visited)
-        // The copy of the root sits where the tree is drawn on the display: the strip shows the top
-        // band of it.
-        if let main = mainWindow?.frame, let strip = stripWindow?.frame {
-            rootCopy.position = CGPoint(x: layer.position.x + main.minX - strip.minX,
-                                        y: layer.position.y + main.minY - strip.minY)
-        }
+        rootCopy.bounds = layer.bounds
+        rootCopy.anchorPoint = layer.anchorPoint
+        rootCopy.transform = layer.transform
+        rootCopy.isGeometryFlipped = layer.isGeometryFlipped
+        placeRootCopy(rootCopy)
         if stripLayer.sublayers?.first !== rootCopy {
             stripLayer.actions = Self.noActions
             stripLayer.sublayers = [rootCopy]
         }
+        // The strip's area in the tree's coordinates.
+        let band = rootCopy.convert(stripLayer.bounds, from: stripLayer)
+        sync(layer, into: rootCopy, band: band, reach: 0, visited: &visited)
+        placeRootCopy(rootCopy)
         for id in Array(copies.keys) where !visited.contains(id) {
             copies[id] = nil
             observations[id] = nil
         }
+    }
+
+    /// The copy of the root sits where the tree is drawn on the display: the strip shows the top band
+    /// of it.
+    func placeRootCopy(_ rootCopy: CALayer) {
+        if let main = mainWindow?.frame, let strip = stripWindow?.frame {
+            rootCopy.position = CGPoint(x: layer.position.x + main.minX - strip.minX,
+                                        y: layer.position.y + main.minY - strip.minY)
+        } else {
+            rootCopy.position = layer.position
+        }
+    }
+
+    /// How far a point of `source`'s subtree can move from where the model puts it while its
+    /// transform animations run: the largest change of scale between an animation's values and the
+    /// model value, times the tree's size. The open and close zoom the main grid this way
+    /// (REF-OVERLAY-001, REF-OVERLAY-004).
+    func animatedReach(of source: CALayer) -> CGFloat {
+        let model = source.transform
+        var deviation: CGFloat = 0
+        for key in source.animationKeys() ?? [] {
+            guard let animation = source.animation(forKey: key) as? CABasicAnimation,
+                  animation.keyPath == "transform" else { continue }
+            for value in [animation.fromValue, animation.toValue] {
+                guard let transform = (value as? NSValue)?.caTransform3DValue,
+                      model.m11 != 0, model.m22 != 0 else { continue }
+                deviation = max(deviation, abs(transform.m11 / model.m11 - 1), abs(transform.m22 / model.m22 - 1))
+            }
+        }
+        let size = max(layer.bounds.width, layer.bounds.height)
+        return deviation * size
+    }
+
+    /// Whether `source` can show in `band` (the tree's coordinates): its bounds in the tree, widened
+    /// by `reach`, meet the band. A layer without a size may hold sublayers anywhere, so it counts.
+    func reaches(_ source: CALayer, band: CGRect, reach: CGFloat) -> Bool {
+        if source.bounds.isEmpty { return true }
+        let rect = source.convert(source.bounds, to: layer)
+        return rect.insetBy(dx: -reach, dy: -reach).intersects(band)
     }
 
     /// A plain `CALayer` for every layer: the grid's layer classes have no `-init` to make a copy of
@@ -168,7 +211,7 @@ final class WALayerKitWindow: WAWindow {
         return copy
     }
 
-    func sync(_ source: CALayer, into copy: CALayer, visited: inout Set<ObjectIdentifier>) {
+    func sync(_ source: CALayer, into copy: CALayer, band: CGRect, reach: CGFloat, visited: inout Set<ObjectIdentifier>) {
         visited.insert(ObjectIdentifier(source))
         copy.bounds = source.bounds
         copy.position = source.position
@@ -207,19 +250,20 @@ final class WALayerKitWindow: WAWindow {
         copy.minificationFilter = source.minificationFilter
         if let mask = source.mask {
             let maskCopy = self.copy(of: mask)
-            sync(mask, into: maskCopy, visited: &visited)
+            sync(mask, into: maskCopy, band: .infinite, reach: reach, visited: &visited)
             copy.mask = maskCopy
         } else {
             copy.mask = nil
         }
 
-        let sublayers = source.sublayers ?? []
-        let sublayerCopies = sublayers.map { self.copy(of: $0) }
+        let candidates = (source.sublayers ?? []).map { ($0, reach + animatedReach(of: $0)) }
+        let sublayers = candidates.filter { reaches($0.0, band: band, reach: $0.1) }
+        let sublayerCopies = sublayers.map { self.copy(of: $0.0) }
         if (copy.sublayers ?? []).map(ObjectIdentifier.init) != sublayerCopies.map(ObjectIdentifier.init) {
             copy.sublayers = sublayerCopies.isEmpty ? nil : sublayerCopies
         }
-        for (sublayer, sublayerCopy) in zip(sublayers, sublayerCopies) {
-            sync(sublayer, into: sublayerCopy, visited: &visited)
+        for ((sublayer, sublayerReach), sublayerCopy) in zip(sublayers, sublayerCopies) {
+            sync(sublayer, into: sublayerCopy, band: band, reach: sublayerReach, visited: &visited)
         }
 
         // An animation added in this transaction has a begin time of 0 until the commit sets it, so

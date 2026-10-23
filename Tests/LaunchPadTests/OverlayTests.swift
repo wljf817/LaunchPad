@@ -31,9 +31,10 @@ import Testing
     func copyFollowsTree() throws {
         let window = makeWindow()
         let child = CALayer()
+        let band = try stripBand(window)
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        child.frame = CGRect(x: 1, y: 2, width: 30, height: 40)
+        child.frame = CGRect(x: band.minX + 1, y: band.minY, width: 30, height: 40)
         child.opacity = 0.25
         child.contents = makeImage()
         child.filters = [CAFilter(type: kCAFilterGaussianBlur)]
@@ -155,6 +156,57 @@ import Testing
 
         #expect(stripWindow.frame == WALayerKitWindow.appKitRect(strip))
         #expect(mainWindow.frame == WALayerKitWindow.appKitRect(main))
+    }
+
+    @Test("只复制能到顶条那一段的 layer；缩放动画能把它带进去时也复制")
+    func copyKeepsOnlyTheStripsBand() throws {
+        let window = makeWindow()
+        let band = try stripBand(window)
+        let inside = CALayer()
+        let below = CALayer()
+        let zoomed = CALayer()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        inside.frame = CGRect(x: band.minX, y: band.minY, width: 10, height: band.height)
+        // Twice the band's height away from it, on the side away from the tree's edge.
+        let away: CGFloat = band.minY > window.layer.bounds.midY ? -1 : 1
+        let gap = band.height * 2
+        below.frame = CGRect(x: band.minX, y: away > 0 ? band.maxY + gap : band.minY - gap - 10, width: 10, height: 10)
+        zoomed.frame = window.layer.bounds
+        window.layer.addSublayer(inside)
+        window.layer.addSublayer(below)
+        CATransaction.commit()
+        CATransaction.flush()
+        var copies = try #require(window.stripLayer.sublayers?.first?.sublayers)
+        #expect(copies.count == 1)
+        #expect(copies.first?.frame == inside.frame)
+
+        // A layer that only reaches the band while its zoom runs (REF-OVERLAY-001) is copied too.
+        let content = CALayer()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        content.frame = below.frame
+        zoomed.addSublayer(content)
+        window.layer.addSublayer(zoomed)
+        let size = max(window.layer.bounds.width, window.layer.bounds.height)
+        let scale = 1 + (gap + 20) / size
+        let animation = CABasicAnimation(keyPath: "transform")
+        animation.fromValue = NSValue(caTransform3D: CATransform3DMakeScale(scale, scale, 1))
+        animation.duration = 10
+        zoomed.add(animation, forKey: "transform")
+        CATransaction.commit()
+        CATransaction.flush()
+        copies = try #require(window.stripLayer.sublayers?.first?.sublayers)
+        #expect(copies.count == 2)
+        #expect(copies.last?.sublayers?.first?.frame == content.frame)
+    }
+
+    /// The strip's area in the tree's coordinates.
+    func stripBand(_ window: WALayerKitWindow) throws -> CGRect {
+        let rootCopy = try #require(window.stripLayer.sublayers?.first)
+        let band = rootCopy.convert(window.stripLayer.bounds, from: window.stripLayer)
+        try #require(!band.isEmpty)
+        return band
     }
 
     func makeWindow() -> WALayerKitWindow {
