@@ -63,6 +63,9 @@ extern CGError CGSSetWindowProperty(CGSConnectionID cid, CGSWindowID wid, CFStri
 // (REF-DEV-011: ignored by the window server for a process that is not Dock).
 extern CFTypeRef _Nullable SLSTransactionCreate(CGSConnectionID cid) CF_RETURNS_RETAINED;
 extern CGError SLSTransactionCommit(CFTypeRef transaction, int32_t synchronous);
+// Orders a window and its window group in (order 1, in front of `otherWindow`, 0 for every window of
+// its level) or out (order 0), when the transaction is committed. Verified on macOS 26.6.2.
+extern void SLSTransactionOrderWindowGroup(CFTypeRef transaction, CGSWindowID wid, int32_t order, CGSWindowID otherWindow);
 extern void SLSTransactionSetSafeApertureOverride(CFTypeRef transaction, double value);
 
 // Called by the original at open and close; an empty function in SkyLight on

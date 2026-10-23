@@ -482,7 +482,9 @@ class Springboard: NSObject, CALayerDelegate, ECSBDataSource {
                 self._cleanupAfterExitAnimation(closingDesktopLayer.value, openCount: count)
             }
         }
-        layer.opacity = 0  // REF-OVERLAY-004
+        // REF-OVERLAY-004; ends at 0.01 instead of 0, so that the window never draws nothing while it
+        // is on screen (REF-DEV-023).
+        layer.opacity = 0.01
         CATransaction.commit()
         WAWindow.setSafeApertureOverride(1, force: false)  // REF-DEV-011
         _cleanupBeforeExitAnimation()

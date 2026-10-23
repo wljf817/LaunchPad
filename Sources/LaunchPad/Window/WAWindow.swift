@@ -24,17 +24,22 @@ class WAWindow: NSObject {
         _frame
     }
 
-    /// Orders both windows in (`order` non-zero) or out (0). AppKit orders them; a SkyLight
-    /// transaction cannot show a window AppKit has not shown, so `transaction` is not used
-    /// (REF-DEV-014).
+    /// Orders both windows in (`order` non-zero) or out (0) in `transaction`, as the original orders
+    /// its window. A SkyLight transaction cannot show a window AppKit has never ordered in, so the
+    /// first order-in goes through AppKit; AppKit then keeps both windows as visible (REF-DEV-014).
     @objc(orderImmediate:otherWindow:with:)
     func orderImmediate(_ order: Int32, otherWindow: UInt32, with transaction: OpaquePointer?) {
-        if order != 0 {
+        if order != 0, mainWindow?.isVisible == false || stripWindow?.isVisible == false {
             mainWindow?.orderFrontRegardless()
             stripWindow?.orderFrontRegardless()
-        } else {
-            stripWindow?.orderOut(nil)
-            mainWindow?.orderOut(nil)
+            return
+        }
+        guard let transaction else { return }
+        let skyLightTransaction = Unmanaged<CFTypeRef>.fromOpaque(UnsafeRawPointer(transaction)).takeUnretainedValue()
+        let windows = order != 0 ? [mainWindow, stripWindow] : [stripWindow, mainWindow]
+        for window in windows {
+            guard let window else { continue }
+            SLSTransactionOrderWindowGroup(skyLightTransaction, CGSWindowID(window.windowNumber), order, otherWindow)
         }
     }
 
