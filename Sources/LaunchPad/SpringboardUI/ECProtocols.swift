@@ -73,3 +73,53 @@ protocol ECSBGridItemSource: NSObjectProtocol {
 
     @objc var isGroupItem: Bool { get }
 }
+
+/// What handles events itself: the event methods take an `ECEvent` and return whether they handled
+/// it; all optional, sent after `respondsToSelector:` (REF-ARCH-006, REF-OVERLAY-009).
+@MainActor
+@objc(ECEventHandling)
+protocol ECEventHandling: NSObjectProtocol {
+    @objc(leftMouseDown:)
+    optional func leftMouseDown(_ event: ECEvent) -> Bool
+
+    @objc(leftMouseUp:)
+    optional func leftMouseUp(_ event: ECEvent) -> Bool
+
+    @objc(leftMouseDragged:)
+    optional func leftMouseDragged(_ event: ECEvent) -> Bool
+
+    @objc(keyDown:)
+    optional func keyDown(_ event: ECEvent) -> Bool
+
+    @objc(keyUp:)
+    optional func keyUp(_ event: ECEvent) -> Bool
+
+    @objc(flagsChanged:)
+    optional func flagsChanged(_ event: ECEvent) -> Bool
+
+    @objc(lostKeyFocus:)
+    optional func lostKeyFocus(_ event: ECEvent?)
+}
+
+/// What handles a layer's events as the layer's `eventDelegate`: the same methods with the layer as
+/// the second argument; all optional (REF-ARCH-006, REF-OVERLAY-009). None of them is implemented
+/// yet.
+@MainActor
+@objc(ECEventHandlingDelegate)
+protocol ECEventHandlingDelegate: NSObjectProtocol {}
+
+/// The controller as the handler of the grid's item actions.
+@MainActor
+@objc(ECSBActionHandling)
+protocol ECSBActionHandling: NSObjectProtocol {
+    @objc(cancelActionWithEvent:sender:)
+    optional func cancelAction(with event: ECEvent?, sender: AnyObject?)
+}
+
+/// The main grid's handler of the actions on the grid (`ECSBPager.gridActionHandler`).
+@MainActor
+@objc(ECSBGridActionHandling)
+protocol ECSBGridActionHandling: NSObjectProtocol {
+    @objc(cancelGridActionWithEvent:sender:)
+    optional func cancelGridAction(with event: ECEvent?, sender: AnyObject?)
+}

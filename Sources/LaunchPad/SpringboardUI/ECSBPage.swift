@@ -25,7 +25,8 @@ class ECSBPage: ECPage, ECLayerSource, ECSBGridDataSource {
     }
 
     /// A folder gets an `ECSBGroupItemLayer` and its `ECSBGroup`, anything else an `ECSBItemLayer`;
-    /// the item and its layer point to each other (research paper §6.2, §11).
+    /// the item and its layer point to each other, and the page handles the layer's events (research
+    /// paper §6.2, §11).
     func makeLayer(for layer: CALayer, at index: UInt) -> CALayer? {
         var gridItem: ECSBItem?
         if let items = item.items, index < items.count {
@@ -42,12 +43,14 @@ class ECSBPage: ECPage, ECLayerSource, ECSBGridDataSource {
                     group.maxItemsPerPage = UInt(gridLayer.rows * gridLayer.columns)
                 }
                 itemLayer.group = group
+                itemLayer.eventDelegate = self  // REF-ARCH-006
                 return itemLayer
             }
         }
         let itemLayer = ECSBItemLayer(scaleFactor: scaleFactor, layoutRTL: layoutRTL)
         itemLayer.item = gridItem
         gridItem?.itemLayer = itemLayer
+        itemLayer.eventDelegate = self  // REF-ARCH-006
         return itemLayer
     }
 
