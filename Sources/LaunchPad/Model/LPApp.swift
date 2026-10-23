@@ -1,6 +1,7 @@
 import Foundation
 import LaunchPadPrivate
 import SQLite3
+import os
 
 /// An application bundle found by a scan (REF-LAYOUT-003).
 @objc(LPApp)
@@ -195,6 +196,37 @@ class LPApp: LPRunnable, @unchecked Sendable {
         let isStore: UInt64 = FileManager.default.fileExists(atPath: receipt) ? 1 : 0
         flags.pointee = flags.pointee & ~0x1 | isStore
         flags.pointee &= ~0x4
+    }
+
+    /// Makes the large icon, then the mini icon, of the app at `url` from its LaunchServices binding
+    /// with IconServices (REF-GRID-012); both nil when there is no binding. Runs on the information
+    /// queue.
+    @objc(loadImagesFromURL:mini:large:images:)
+    override func loadImagesFromURL(_ url: URL?, mini: UInt, large: UInt,
+                                    images block: @escaping @convention(block) (AnyObject?, AnyObject?) -> Void) {
+        guard let url, let binding = _LSBindingCreateWithURL(nil, url as CFURL) else {
+            block(nil, nil)
+            return
+        }
+        let largeImage = Self.icon(of: binding, size: large)
+        let miniImage = Self.icon(of: binding, size: mini)
+        block(largeImage, miniImage)
+    }
+
+    /// The binding's icon at `size` × `size` pixels, drawn with the copy operation into a bitmap.
+    private static func icon(of binding: CFTypeRef, size: UInt) -> CGImage? {
+        let side = Int(size)
+        return bitmapImage(sRGB: true, width: side, height: side, tag: 0) { context in
+            context.saveGState()
+            CGContextSetCompositeOperation(context, 1)
+            if let image = ISCreateCGImageFromBindingWithSizeScaleAndOptions(binding, CGSize(width: side, height: side), 1, nil) {
+                context.draw(image, in: CGRect(x: 0, y: 0, width: side, height: side))
+            } else {
+                Logger().error("Failed to create an icon image")
+            }
+            context.restoreGState()
+            context.flush()
+        }
     }
 }
 

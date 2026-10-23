@@ -174,6 +174,22 @@ func waitUntilStarted(_ springboard: Springboard) async throws {
     if let storage = springboard.appManager?.storage {
         await waitForDatabase(storage)
     }
+    await waitForIconGeneration(springboard.appManager?.storage)
+}
+
+/// Returns once the icon generations queued so far have run: each goes through the information
+/// queue and the main queue a few times, then writes to the database (REF-GRID-012).
+@MainActor
+func waitForIconGeneration(_ storage: LPStorage?) async {
+    for _ in 0..<5 {
+        await withCheckedContinuation { continuation in
+            LPRunnable.application_info_queue.async { continuation.resume() }
+        }
+        await drainMainQueue()
+        if let storage {
+            await waitForDatabase(storage)
+        }
+    }
 }
 
 /// The grid's item tree mirrors the layout root's pages, apps and folders, in order, and every page

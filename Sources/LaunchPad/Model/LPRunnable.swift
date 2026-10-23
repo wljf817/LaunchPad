@@ -1,7 +1,9 @@
 import Foundation
 import LaunchPadPrivate
 import SQLite3
+import Synchronization
 import UniformTypeIdentifiers
+import os
 
 /// Something Launchpad can open: the base of `LPApp`.
 @objc(LPRunnable)
@@ -17,6 +19,14 @@ class LPRunnable: LPItem, LPLayoutItem, @unchecked Sendable {
     var _modificationTime: Double = 0
     var _lastScan: UInt32 = 0
     @objc var isRestricted = false
+    /// The sizes of the last icon request, in pixels (REF-GRID-012).
+    var largeIconSize: UInt = 0
+    var miniIconSize: UInt = 0
+    /// Counts icon requests; a generation whose count is stale before it starts is dropped.
+    let loadingCounter = Atomic<Int32>(0)
+    var loadingMini = false
+    var reloadingFromDisk = false
+    var loadingLarge = false
 
     @objc(initWithURL:forScan:)
     init?(url: URL, forScan scan: UInt32) {
@@ -53,8 +63,15 @@ class LPRunnable: LPItem, LPLayoutItem, @unchecked Sendable {
             _categoryUTI = uniqueCategoryString(String(cString: text))
         }
         column.pointee += 1
-        // The large and the mini icon: a size and the image data each. Icons are loaded in 1.3.
-        column.pointee += 4
+        // The large and the mini icon: a size and the image data each, into the caches (REF-GRID-012).
+        readImageColumns(statement, column) { size, image in
+            self.largeIconSize = size
+            self.icon = image
+        }
+        readImageColumns(statement, column) { size, image in
+            self.miniIconSize = size
+            self.miniIcon = image
+        }
     }
 
     required init(forCopy: ()) {
@@ -73,6 +90,10 @@ class LPRunnable: LPItem, LPLayoutItem, @unchecked Sendable {
         copy._lastKnownVersion = _lastKnownVersion
         copy._modificationTime = _modificationTime
         copy._lastScan = _lastScan
+        if forStorage, let uuid = uuid as NSString? {
+            copy._icon = iconForStorage ?? Self.iconCache.object(forKey: uuid)
+            copy._miniIcon = miniIconForStorage ?? Self.miniIconCache.object(forKey: uuid)
+        }
         return copy
     }
 
@@ -343,9 +364,194 @@ class LPRunnable: LPItem, LPLayoutItem, @unchecked Sendable {
             didChangeValue(forKey: "isBeta")
         }
         _lastKnownVersion = runnable.lastKnownVersion
-        // Here the original reloads the icons, which arrive in 1.3.
+        _retrieveImageOfLargeSize(largeIconSize, andMiniSize: miniIconSize, force: true)
         let newFlags = runnable.flags
         flags = newFlags & ~0x3fff | newFlags & 0xff | (flags >> 8 & 0x3f) << 8
+    }
+}
+
+// MARK: - Icons
+
+extension LPRunnable {
+    /// The process-wide icon caches, keyed by the item's uuid, without a cost limit (REF-GRID-012). The
+    /// original creates them in `+initialize`; the delegate only logs evictions and is set only when
+    /// debug logging is on.
+    nonisolated(unsafe) static let iconCache = makeIconCache(name: "LPAppIconCache")
+    nonisolated(unsafe) static let miniIconCache = makeIconCache(name: "LPAppMiniIconCache")
+    private static let cacheDelegate = LPAppNSCacheDelegate()
+
+    private static func makeIconCache(name: String) -> NSCache<NSString, AnyObject> {
+        let cache = NSCache<NSString, AnyObject>()
+        cache.name = name
+        cache.totalCostLimit = Int(bitPattern: UInt.max)  // REF-GRID-012: NSUIntegerMax
+        if OSLog.default.isEnabled(type: .debug) {
+            cache.delegate = cacheDelegate
+        }
+        return cache
+    }
+
+    /// The cost of an image in the caches: width × width × 32 (REF-GRID-012).
+    private static func cost(_ image: AnyObject) -> Int {
+        let width = (image as! CGImage).width
+        return width * width * 32
+    }
+
+    /// The icon: the item's own, else the cache's (kept when `shouldCacheIcons`); on a miss it is read
+    /// from the database and set when it arrives, and nil is returned meanwhile.
+    @objc dynamic override var icon: AnyObject? {
+        get {
+            if let icon = _icon {
+                return icon
+            }
+            guard let uuid = uuid as NSString? else { return nil }
+            if let cached = Self.iconCache.object(forKey: uuid) {
+                if _shouldCacheIcons {
+                    _icon = cached
+                }
+                return cached
+            }
+            if !loadingLarge {
+                loadingLarge = true
+                loadImage(true) { [self] size, image in
+                    iconLoaded(size: size, image: image, large: true)
+                }
+            }
+            return nil
+        }
+        set {
+            guard let uuid = uuid as NSString? else { return }
+            guard let newValue else {
+                Self.iconCache.removeObject(forKey: uuid)
+                _icon = nil
+                return
+            }
+            Self.iconCache.setObject(newValue, forKey: uuid, cost: Self.cost(newValue))
+            _icon = _shouldCacheIcons ? newValue : nil
+        }
+    }
+
+    @objc dynamic override var miniIcon: AnyObject? {
+        get {
+            if let icon = _miniIcon {
+                return icon
+            }
+            guard let uuid = uuid as NSString? else { return nil }
+            if let cached = Self.miniIconCache.object(forKey: uuid) {
+                if _shouldCacheIcons {
+                    _miniIcon = cached
+                }
+                return cached
+            }
+            if !loadingMini {
+                loadingMini = true
+                loadImage(false) { [self] size, image in
+                    iconLoaded(size: size, image: image, large: false)
+                }
+            }
+            return nil
+        }
+        set {
+            guard let uuid = uuid as NSString? else { return }
+            guard let newValue else {
+                // Unlike the large icon, the item's own mini icon is kept.
+                Self.miniIconCache.removeObject(forKey: uuid)
+                return
+            }
+            Self.miniIconCache.setObject(newValue, forKey: uuid, cost: Self.cost(newValue))
+            _miniIcon = _shouldCacheIcons ? newValue : nil
+        }
+    }
+
+    @objc override var iconForStorage: AnyObject? { _icon }
+    @objc override var miniIconForStorage: AnyObject? { _miniIcon }
+
+    /// An icon read from the database, on the main queue: used when the item has none of its own, or
+    /// when its size is the requested one; otherwise (or when nothing was stored) the icons are
+    /// generated again at the requested sizes (REF-GRID-012).
+    private func iconLoaded(size: UInt, image: AnyObject?, large: Bool) {
+        let stored: AnyObject? = large ? iconForStorage : miniIconForStorage
+        let requested = large ? largeIconSize : miniIconSize
+        if image == nil || (stored != nil && requested != size) {
+            if !reloadingFromDisk {
+                reloadingFromDisk = true
+                _retrieveImageOfLargeSize(largeIconSize, andMiniSize: miniIconSize, force: true)
+            }
+        } else if large {
+            icon = image
+        } else {
+            miniIcon = image
+        }
+        if large {
+            loadingLarge = false
+        } else {
+            loadingMini = false
+        }
+    }
+
+    /// Reads the large or the mini icon from the database on the database queue and calls `block`
+    /// on the main queue with its size and image, (0, nil) when there is none.
+    @objc(loadImage:block:)
+    func loadImage(_ large: Bool, block: @escaping @convention(block) (UInt, AnyObject?) -> Void) {
+        let snapshot = snapshotForStorage(true, deepCopy: false)
+        weak let storage = storage
+        let completion = LPCompletionBlock { _ in block(0, nil) }
+        storage?.addBlockToDatabaseQueue {
+            completion.invalidate()
+            storage?._loadImage(large, fromApp: snapshot, withBlock: block)
+        }
+    }
+
+    /// Requests the icons at these pixel sizes; does nothing when they are the last requested ones.
+    @objc(retrieveImageOfLargeSize:andMiniSize:)
+    func retrieveImageOfLargeSize(_ large: UInt, andMiniSize mini: UInt) {
+        _retrieveImageOfLargeSize(large, andMiniSize: mini, force: false)
+    }
+
+    /// Records the sizes and generates the icons on the information queue: the bookmark is resolved,
+    /// then the images are made from the app's URL and set on the main queue (REF-GRID-012).
+    @objc(_retrieveImageOfLargeSize:andMiniSize:force:)
+    func _retrieveImageOfLargeSize(_ large: UInt, andMiniSize mini: UInt, force: Bool) {
+        guard force || largeIconSize != large || miniIconSize != mini else { return }
+        largeIconSize = large
+        miniIconSize = mini
+        let count = loadingCounter.add(1, ordering: .sequentiallyConsistent).newValue
+        let request = UncheckedBox(self)
+        LPRunnable.application_info_queue.async {
+            let runnable = request.value
+            guard runnable.loadingCounter.load(ordering: .sequentiallyConsistent) == count else { return }
+            runnable.resolveURLFromBookMark(false) { url in
+                guard runnable.loadingCounter.load(ordering: .sequentiallyConsistent) == count else { return }
+                let resolved = UncheckedBox(url)
+                LPRunnable.application_info_queue.async {
+                    let url = resolved.value?.resolvingSymlinksInPath()
+                    guard runnable.loadingCounter.load(ordering: .sequentiallyConsistent) == count else { return }
+                    Logger().info("Generating image \(large) \(mini) for \(url?.path ?? "(null)")")
+                    runnable.loadImagesFromURL(url, mini: mini, large: large) { largeImage, miniImage in
+                        let images = UncheckedBox((largeImage, miniImage))
+                        DispatchQueue.main.async {
+                            let (largeImage, miniImage) = images.value
+                            if largeImage != nil {
+                                runnable.icon = largeImage
+                            }
+                            if miniImage != nil {
+                                runnable.miniIcon = miniImage
+                            }
+                            if largeImage != nil || miniImage != nil {
+                                runnable.updateImageStorage()
+                            }
+                            runnable.reloadingFromDisk = false
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Makes the large and the mini icon from the app at `url`; a runnable that is not an app has none.
+    @objc(loadImagesFromURL:mini:large:images:)
+    func loadImagesFromURL(_ url: URL?, mini: UInt, large: UInt,
+                           images block: @escaping @convention(block) (AnyObject?, AnyObject?) -> Void) {
+        block(nil, nil)
     }
 }
 

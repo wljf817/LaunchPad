@@ -2,6 +2,8 @@ import Foundation
 import LaunchPadPrivate
 import SQLite3
 import Synchronization
+import ImageIO
+import os
 
 /// The Launchpad database (REF-LAYOUT-001, REF-LAYOUT-002).
 ///
@@ -950,17 +952,20 @@ final class LPStorage: NSObject, @unchecked Sendable {
         _updateItem(item, withColumnValues: ["category_id": id])
     }
 
-    /// Writes the icon sizes and image data. Items have no icons until 1.3, which the original
-    /// writes as sizes 0 and no data.
+    /// Writes a snapshot's icons: the widths of the images and their PNG data, 0 and NULL without an
+    /// image (REF-GRID-012).
     @objc(_updateImageStorageForItem:)
     func _updateImageStorageForItem(_ item: LPItem) {
+        let icon = item.iconForStorage as! CGImage?
+        let miniIcon = item.miniIconForStorage as! CGImage?
+        Logger().info("Updating image for \(item.title ?? "(null)")")
         let sql = "UPDATE image_cache SET size_big=?, size_mini=?, image_data=?, image_data_mini=? WHERE item_id IN (SELECT rowid FROM items WHERE uuid=?);"
         var statement: OpaquePointer?
         var result = statement_cache.statement(with: sql, database: db, statement: &statement)
-        if result == SQLITE_OK { result = sqlite3_bind_int64(statement, 1, 0) }
-        if result == SQLITE_OK { result = sqlite3_bind_int64(statement, 2, 0) }
-        if result == SQLITE_OK { result = sqlite3_bind_null(statement, 3) }
-        if result == SQLITE_OK { result = sqlite3_bind_null(statement, 4) }
+        if result == SQLITE_OK { result = sqlite3_bind_int(statement, 1, Int32(truncatingIfNeeded: icon?.width ?? 0)) }
+        if result == SQLITE_OK { result = sqlite3_bind_int(statement, 2, Int32(truncatingIfNeeded: miniIcon?.width ?? 0)) }
+        if result == SQLITE_OK { result = bindImage(statement, 3, icon) }
+        if result == SQLITE_OK { result = bindImage(statement, 4, miniIcon) }
         if result == SQLITE_OK { result = bindString(statement, 5, item.uuid) }
         if result == SQLITE_OK {
             result = sqlite3_step(statement)
@@ -969,6 +974,33 @@ final class LPStorage: NSObject, @unchecked Sendable {
             }
         }
         recordFailure(#function, #line, result)
+    }
+
+    /// Reads the size and image data of an item's large or mini icon and calls `block` with them on
+    /// the main queue; with (0, nil) when there is no row or the query fails (REF-GRID-012).
+    @objc(_loadImage:fromApp:withBlock:)
+    func _loadImage(_ large: Bool, fromApp item: LPItem, withBlock block: @escaping @convention(block) (UInt, AnyObject?) -> Void) {
+        let sql = large
+            ? "select size_big, image_data from image_cache WHERE item_id IN (SELECT rowid FROM items WHERE uuid=?);"
+            : "select size_mini, image_data_mini from image_cache WHERE item_id IN (SELECT rowid FROM items WHERE uuid=?);"
+        var statement: OpaquePointer?
+        var result = sqlite3_prepare_v2(db, sql, -1, &statement, nil)
+        defer { sqlite3_finalize(statement) }
+        if result == SQLITE_OK { result = bindString(statement, 1, item.uuid) }
+        if result == SQLITE_OK {
+            result = sqlite3_step(statement)
+            if result == SQLITE_ROW, let statement {
+                var column: Int32 = 0
+                readImageColumns(statement, &column) { size, image in
+                    let found = UncheckedBox((block, size, image))
+                    DispatchQueue.main.async { found.value.0(found.value.1, found.value.2) }
+                }
+                return
+            }
+        }
+        NSLog("SQLite failure in %s: err=%d (%s)", "-[LPStorage _loadImage:fromApp:withBlock:]", result, sqlite3_errmsg(db))
+        let failed = UncheckedBox(block)
+        DispatchQueue.main.async { failed.value(0, nil) }
     }
 
     private func recordFailure(_ method: String, _ line: Int, _ result: Int32) {
@@ -1036,3 +1068,38 @@ func uniqueCategoryString(_ string: String) -> String {
 }
 
 private let categoryStrings = Mutex(NSMutableSet())
+
+/// Binds an image as its PNG data, or NULL without an image or data (REF-GRID-012).
+private func bindImage(_ statement: OpaquePointer?, _ index: Int32, _ image: CGImage?) -> Int32 {
+    guard let image else { return sqlite3_bind_null(statement, index) }
+    let data = NSMutableData()
+    guard let destination = CGImageDestinationCreateWithData(data, "public.png" as CFString, 1, nil) else {
+        return sqlite3_bind_null(statement, index)
+    }
+    CGImageDestinationAddImage(destination, image, nil)
+    guard CGImageDestinationFinalize(destination), data.length != 0 else {
+        return sqlite3_bind_null(statement, index)
+    }
+    return sqlite3_bind_blob(statement, index, data.bytes, Int32(data.length), sqliteTransient)
+}
+
+/// Reads an icon's size and image data from the two columns at `column` and advances it: the image
+/// decoded with Image I/O, metadata skipped and not cached; the size is 0 without an image
+/// (REF-GRID-012).
+func readImageColumns(_ statement: OpaquePointer, _ column: UnsafeMutablePointer<Int32>,
+                      _ block: (UInt, AnyObject?) -> Void) {
+    let size = sqlite3_column_int(statement, column.pointee)
+    column.pointee += 1
+    let blob = sqlite3_column_blob(statement, column.pointee)
+    let length = sqlite3_column_bytes(statement, column.pointee)
+    column.pointee += 1
+    var image: CGImage?
+    if let blob, length > 0 {
+        let data = NSData(bytes: blob, length: Int(length))
+        if let source = CGImageSourceCreateWithData(data, nil) {
+            let options = [kCGImageSourceSkipMetadata: true, kCGImageSourceShouldCache: false] as CFDictionary
+            image = CGImageSourceCreateImageAtIndex(source, 0, options)
+        }
+    }
+    block(image != nil ? UInt(truncatingIfNeeded: Int(size)) : 0, image)
+}

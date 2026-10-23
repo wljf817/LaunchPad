@@ -14,6 +14,10 @@ class LPItem: NSObject, @unchecked Sendable {
     var _flags: UInt64 = 0
     var _isSparseCopy = false
     var _isSnapshot = false
+    /// The icon and mini icon, `CGImage`s (REF-GRID-012).
+    var _icon: AnyObject?
+    var _miniIcon: AnyObject?
+    var _shouldCacheIcons = false
     @objc weak var storage: LPStorage?
     @objc weak var parentContainer: (LPItem & LPItemContainer)?
 
@@ -44,13 +48,17 @@ class LPItem: NSObject, @unchecked Sendable {
         super.init()
     }
 
-    /// A copy for the database queue. With `forStorage` it keeps the uuid, otherwise it gets a new one;
-    /// without `deepCopy` it is marked sparse.
+    /// A copy for the database queue. With `forStorage` it keeps the uuid and the icons, otherwise it
+    /// gets a new uuid; without `deepCopy` it is marked sparse.
     @objc(snapshotForStorage:deepCopy:)
     func snapshotForStorage(_ forStorage: Bool, deepCopy: Bool) -> LPItem {
         let copy = type(of: self).init(forCopy: ())
         copy._title = _title
         copy._flags = _flags
+        if forStorage {
+            copy._icon = _icon
+            copy._miniIcon = _miniIcon
+        }
         copy.uuid = forStorage ? uuid : newUUIDString()
         if !deepCopy {
             copy._isSparseCopy = true
@@ -59,7 +67,8 @@ class LPItem: NSObject, @unchecked Sendable {
         return copy
     }
 
-    @objc var title: String? {
+    /// Dynamic, so that setting it from Swift also reaches the observers (REF-GRID-014).
+    @objc dynamic var title: String? {
         get { _title }
         set {
             if isEqualToString(_title, newValue) {
@@ -77,6 +86,35 @@ class LPItem: NSObject, @unchecked Sendable {
             _flags = newValue
             updateFlagsStorage()
         }
+    }
+
+    /// Dynamic, so that setting it from Swift also reaches the observers (REF-GRID-014).
+    @objc dynamic var icon: AnyObject? {
+        get { _icon }
+        set {
+            willChangeValue(forKey: "icon")
+            _icon = newValue
+            didChangeValue(forKey: "icon")
+        }
+    }
+
+    /// The original announces the change twice with `willChange` and never with `didChange`
+    /// (research paper §12.4).
+    @objc dynamic var miniIcon: AnyObject? {
+        get { _miniIcon }
+        set {
+            willChangeValue(forKey: "miniIcon")
+            _miniIcon = newValue
+            willChangeValue(forKey: "miniIcon")
+        }
+    }
+
+    @objc dynamic var iconForStorage: AnyObject? { icon }
+    @objc dynamic var miniIconForStorage: AnyObject? { miniIcon }
+
+    @objc var shouldCacheIcons: Bool {
+        get { _shouldCacheIcons }
+        set { _shouldCacheIcons = newValue }
     }
 
     @objc var isSparseCopy: Bool { _isSparseCopy }
@@ -137,6 +175,15 @@ extension LPItem {
         weak let storage = storage
         storage?.addBlockToDatabaseQueue {
             storage?._updateItem(snapshot, withItemProperties: ["title"])
+        }
+    }
+
+    /// Writes the icons of a snapshot to `image_cache` (REF-GRID-012).
+    @objc func updateImageStorage() {
+        weak let storage = storage
+        let snapshot = snapshotForStorage(true, deepCopy: false)
+        storage?.addBlockToDatabaseQueue {
+            storage?._updateImageStorageForItem(snapshot)
         }
     }
 

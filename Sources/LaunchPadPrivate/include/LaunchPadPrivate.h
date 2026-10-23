@@ -186,6 +186,66 @@ extern bool SLSGetSystemUIHasRTLDirectionLegacy(void);
 // first answer in the process and updates it only through the event loop.
 extern CGError SLSGetDockRectWithOrientation(CGSConnectionID cid, CGRect *rect, int32_t *reason, int32_t *orientation);
 
+// ---------------------------------------------------------------------------
+// Icons (grid-items, REF-GRID-012). Verified on macOS 15.6.1 (24G90), 26.6.2
+// (25G83) and 27.0.1 (26A434): the symbols exist with these arguments and give
+// images.
+
+// A LaunchServices binding for an app's URL, and one for a type and creator code
+// (the original uses type 0 and creator 0x6e6c6464 for its placeholder icon).
+extern CFTypeRef _Nullable _LSBindingCreateWithURL(CFAllocatorRef _Nullable allocator, CFURLRef url) CF_RETURNS_RETAINED;
+extern CFTypeRef _Nullable _LSBindingCreateWithTypeInfo(CFAllocatorRef _Nullable allocator, uint32_t type, uint32_t creator,
+                                                        CFStringRef _Nullable extension, uint64_t flags) CF_RETURNS_RETAINED;
+// The binding's IconRef, the identity the sized icon cache keys on.
+extern void * _Nullable _LSBindingGetIconRef(CFTypeRef binding);
+
+// An app's icon image from IconServices, at a size in pixels and an integer scale.
+extern CGImageRef _Nullable ISCreateCGImageFromBindingWithSizeScaleAndOptions(CFTypeRef binding, CGSize size, uint32_t scale,
+                                                                              CFDictionaryRef _Nullable options) CF_RETURNS_RETAINED;
+
+// Image I/O's option that skips metadata when decoding a stored icon; exported,
+// not in the public headers.
+extern const CFStringRef kCGImageSourceSkipMetadata;
+
+// Drawing an icon into a bitmap: the copy compositing operation (1), and a
+// reused bitmap context pointed at new memory.
+extern void CGContextSetCompositeOperation(CGContextRef context, int32_t operation);
+extern void CGBitmapContextSetData(CGContextRef context, size_t x, size_t y, size_t width, size_t height, void *data,
+                                   size_t bitsPerComponent, size_t bitsPerPixel, size_t bytesPerRow);
+
+// Core Animation's render image: the contents of a sized icon cache entry
+// (ECSizedIconImageCacheRenderObject). Format 1 with one level over memory the
+// release callback unmaps (called with the data and releaseInfo).
+typedef struct _CARenderImage *CARenderImageRef;
+extern CARenderImageRef _Nullable CARenderImageNewMipmapped(uint32_t format, size_t width, size_t height, uint32_t levels,
+                                                            CGColorSpaceRef space, const void *data, const size_t *rowBytes,
+                                                            void (*_Nullable release)(void *_Nullable, size_t),
+                                                            size_t releaseInfo);
+extern CGImageRef _Nullable CARenderImageCopyCGImage(CARenderImageRef image) CF_RETURNS_RETAINED;
+extern size_t CARenderImageGetWidth(CARenderImageRef image);
+extern size_t CARenderImageGetHeight(CARenderImageRef image);
+extern void * _Nullable CARenderRetain(void *_Nullable object);
+extern void CARenderRelease(void *_Nullable object);
+
+#ifdef __OBJC__
+// IconServices' Objective-C interface, used for the placeholder icon.
+@interface ISImageDescriptor : NSObject
+- (instancetype)initWithSize:(CGSize)size scale:(CGFloat)scale;
+@property (nonatomic) NSUInteger backgroundStyle;
+@end
+
+@interface ISImage : NSObject
+@property (readonly, nullable) CGImageRef CGImage;
+@property (readonly) BOOL placeholder;
+@end
+
+@interface ISIcon : NSObject
+- (instancetype)initWithBinding:(id)binding;
+- (void)prepareImagesForImageDescriptors:(NSArray<ISImageDescriptor *> *)descriptors;
+- (nullable ISImage *)imageForImageDescriptor:(ISImageDescriptor *)descriptor;
+@end
+#endif
+
 CF_ASSUME_NONNULL_END
 
 #endif

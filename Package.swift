@@ -26,8 +26,9 @@ let package = Package(
                 .linkedFramework("QuartzCore"),
                 .linkedFramework("ApplicationServices"),
                 .linkedFramework("CoreText"),
-                // SLSTransaction* are only exported by the private SkyLight framework.
-                .unsafeFlags(["-F/System/Library/PrivateFrameworks", "-framework", "SkyLight"]),
+                // SLSTransaction* are only exported by the private SkyLight framework,
+                // the icon functions and classes by the private IconServices framework.
+                .unsafeFlags(["-F/System/Library/PrivateFrameworks", "-framework", "SkyLight", "-framework", "IconServices"]),
             ]
         ),
         .testTarget(
