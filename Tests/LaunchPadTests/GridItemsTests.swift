@@ -127,7 +127,7 @@ struct GridItemsTests {
         #expect(LPRunnable.iconCache.object(forKey: app.uuid! as NSString) === icon)
         #expect(app._icon == nil)
         #expect(app.icon === icon)
-        app.shouldCacheIcons = true
+        app.setShouldCacheIcons(true)
         #expect(app.icon === icon)
         #expect(app._icon === icon)
         let mini = try #require(solidImage(22))

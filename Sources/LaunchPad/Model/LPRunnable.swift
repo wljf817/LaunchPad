@@ -462,6 +462,16 @@ extension LPRunnable {
         }
     }
 
+    /// Turning it off drops the item's own icons; the shared caches keep theirs (REF-GRID-015).
+    @objc(setShouldCacheIcons:)
+    override func setShouldCacheIcons(_ shouldCacheIcons: Bool) {
+        super.setShouldCacheIcons(shouldCacheIcons)
+        if !shouldCacheIcons {
+            _icon = nil
+            _miniIcon = nil
+        }
+    }
+
     @objc override var iconForStorage: AnyObject? { _icon }
     @objc override var miniIconForStorage: AnyObject? { _miniIcon }
 

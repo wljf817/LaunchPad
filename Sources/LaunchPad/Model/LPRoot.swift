@@ -23,6 +23,17 @@ class LPRoot: LPPage, @unchecked Sendable {
     @objc override var children: NSMutableArray { mutableArrayValue(forKey: "rootChildren") }
     @objc override var storageChildren: NSArray { super.children }
 
+    /// Only a change is passed on: the root's own flag is written directly, then every descendant gets
+    /// the value, depth first (REF-GRID-015).
+    @objc(setShouldCacheIcons:)
+    override func setShouldCacheIcons(_ shouldCacheIcons: Bool) {
+        guard _shouldCacheIcons != shouldCacheIcons else { return }
+        _shouldCacheIcons = shouldCacheIcons
+        iterateChildren { child, _ in
+            child.setShouldCacheIcons(shouldCacheIcons)
+        }
+    }
+
     /// Sets the children read from the database, the hidden page included.
     @objc(setRawChildren:)
     func setRawChildren(_ children: [Any]) {

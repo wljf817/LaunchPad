@@ -112,9 +112,13 @@ class LPItem: NSObject, @unchecked Sendable {
     @objc dynamic var iconForStorage: AnyObject? { icon }
     @objc dynamic var miniIconForStorage: AnyObject? { miniIcon }
 
-    @objc var shouldCacheIcons: Bool {
-        get { _shouldCacheIcons }
-        set { _shouldCacheIcons = newValue }
+    /// Whether the item keeps its icons in its own ivars besides the shared caches; set at every open
+    /// and cleared by the purge after a close (REF-GRID-015).
+    @objc var shouldCacheIcons: Bool { _shouldCacheIcons }
+
+    @objc(setShouldCacheIcons:)
+    dynamic func setShouldCacheIcons(_ shouldCacheIcons: Bool) {
+        _shouldCacheIcons = shouldCacheIcons
     }
 
     @objc var isSparseCopy: Bool { _isSparseCopy }
