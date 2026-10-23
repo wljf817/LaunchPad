@@ -113,3 +113,136 @@ func notificationEvent(code: Int64) -> CGEvent {
         #expect(weakDelegate == nil)
     }
 }
+
+@MainActor
+@Suite struct DispatchTests {
+    let window: WALayerKitWindow
+    let top = CALayer()
+    let child = RecordingLayer()
+    let controller = ECModalEventController()
+
+    init() {
+        let display = CGMainDisplayID()
+        window = WALayerKitWindow(frame: CGDisplayBounds(display), connection: UInt32(bitPattern: CGSMainConnectionID()),
+                                  display: display, tags: 0x400, level: 20)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        top.frame = window.layer.bounds
+        child.frame = CGRect(x: 10, y: 10, width: 100, height: 100)
+        top.addSublayer(child)
+        window.layer.addSublayer(top)
+        CATransaction.commit()
+        CATransaction.flush()
+    }
+
+    /// The global location of `point` in the top layer's coordinates (REF-OVERLAY-009).
+    func global(_ point: CGPoint) -> CGPoint {
+        let frame = window.frame()
+        return CGPoint(x: frame.minX + point.x, y: frame.minY + frame.height - 1 - point.y)
+    }
+
+    func send(_ event: CGEvent) {
+        var windows = [window]
+        var layers = [top]
+        controller.handleEvent(event, windows: &windows, topLayers: &layers, windowCount: 1)
+    }
+
+    @Test("全局坐标换成窗口坐标：y 比矩形的换算少 1")
+    func convertPoint() {
+        let frame = window.frame()
+        let point = window.convertPointFromGlobal(CGPoint(x: frame.minX + 5, y: frame.minY + 7))
+        #expect(point == CGPoint(x: 5, y: frame.height - 1 - 7))
+    }
+
+    @Test("事件代理先于 layer 自己；它捕获后松开时收到带 layer 的 leftMouseUp:in:")
+    func delegateFirst() {
+        let handler = RecordingHandler(layer: top)
+        let delegate = RecordingDelegate()
+        child.eventDelegate = delegate
+        controller.addHandler(handler, externalEventSource: true, usingMouseHysteresis: true)
+        send(mouseEvent(.leftMouseDown, at: global(CGPoint(x: 50, y: 50))))
+        send(mouseEvent(.leftMouseUp, at: global(CGPoint(x: 500, y: 500))))
+        #expect(delegate.calls.map(\.0) == ["down", "up"])
+        #expect(delegate.calls.allSatisfy { $0.1 === child })
+        #expect(child.calls.isEmpty)
+        #expect(handler.calls.isEmpty)
+        child.eventDelegate = nil
+    }
+
+    @Test("layer 自己捕获后，拖动和松开都交给它，不再看位置")
+    func layerCapture() {
+        let handler = RecordingHandler(layer: top)
+        controller.addHandler(handler, externalEventSource: true, usingMouseHysteresis: true)
+        send(mouseEvent(.leftMouseDown, at: global(CGPoint(x: 50, y: 50))))
+        send(mouseEvent(.leftMouseDragged, at: global(CGPoint(x: 400, y: 50))))
+        send(mouseEvent(.leftMouseUp, at: global(CGPoint(x: 400, y: 50))))
+        #expect(child.calls == ["down", "dragged", "up"])
+        #expect(handler.calls.isEmpty)
+        #expect(handler.processed == 3)
+    }
+
+    @Test("沿 layer 往上找，顶层 layer 也问；都不处理就交给处理者")
+    func upToTopThenHandler() {
+        let handler = RecordingHandler(layer: top)
+        let delegate = RecordingDelegate()
+        child.handles = false
+        top.eventDelegate = delegate
+        controller.addHandler(handler, externalEventSource: true, usingMouseHysteresis: true)
+        send(mouseEvent(.leftMouseDown, at: global(CGPoint(x: 50, y: 50))))
+        #expect(child.calls == ["down"])
+        #expect(delegate.calls.map(\.0) == ["down"])
+        #expect(delegate.calls.first?.1 === top)
+        #expect(handler.calls.isEmpty)
+        send(mouseEvent(.leftMouseUp, at: global(CGPoint(x: 50, y: 50))))
+
+        delegate.handles = false
+        send(mouseEvent(.leftMouseDown, at: global(CGPoint(x: 50, y: 50))))
+        #expect(handler.calls == ["down"])
+        top.eventDelegate = nil
+    }
+
+    @Test("keyDown 先给处理者的 modalEventLayer，它不处理再给处理者")
+    func keyDown() {
+        let keyLayer = RecordingLayer()
+        let handler = RecordingHandler(layer: keyLayer)
+        controller.addHandler(handler, externalEventSource: true, usingMouseHysteresis: true)
+        send(keyEvent(53, character: 0x1b))
+        #expect(keyLayer.calls == ["keyDown"])
+        #expect(handler.calls.isEmpty)
+        keyLayer.handles = false
+        send(keyEvent(53, character: 0x1b))
+        #expect(handler.calls == ["keyDown"])
+    }
+
+    @Test("通知码 0x1000、0xf102、0x4000 调 lostKeyFocus:，别的不调")
+    func notificationCodes() {
+        let handler = RecordingHandler(layer: top)
+        controller.addHandler(handler, externalEventSource: true, usingMouseHysteresis: true)
+        for code in [0x1000, 0xf102, 0x4000, 0x8000] as [Int64] {
+            send(notificationEvent(code: code))
+        }
+        #expect(handler.lostKeyFocusEvents.count == 3)
+        #expect(handler.lostKeyFocusEvents.allSatisfy { $0 != nil })
+        #expect(handler.processed == 4)
+    }
+
+    @Test("压上新处理者时旧的收到 lostKeyFocus:nil；移走后不再分发给它")
+    func handlerStack() {
+        let first = RecordingHandler(layer: top)
+        let second = RecordingHandler(layer: top)
+        controller.addHandler(first, externalEventSource: true, usingMouseHysteresis: true)
+        controller.addHandler(second, externalEventSource: true, usingMouseHysteresis: true)
+        #expect(first.lostKeyFocusEvents.count == 1)
+        #expect(first.lostKeyFocusEvents.first! == nil)
+        child.handles = false
+        send(mouseEvent(.leftMouseDown, at: global(CGPoint(x: 50, y: 50))))
+        #expect(second.calls == ["down"])
+        #expect(first.calls.isEmpty)
+        controller.removeHandler(second)
+        send(mouseEvent(.leftMouseDown, at: global(CGPoint(x: 50, y: 50))))
+        #expect(second.calls == ["down"])
+        #expect(first.calls == ["down"])
+        controller.removeHandler(first)
+        #expect(controller.eventHandlers.count == 0)
+    }
+}

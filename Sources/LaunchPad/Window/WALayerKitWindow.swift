@@ -71,6 +71,14 @@ final class WALayerKitWindow: WAWindow {
                       width: rect.width, height: rect.height)
     }
 
+    /// A point in global coordinates in the window's coordinates, as the original converts it: one
+    /// less in y than the rectangle conversion (REF-OVERLAY-009).
+    @objc(convertPointFromGlobal:)
+    func convertPointFromGlobal(_ point: CGPoint) -> CGPoint {
+        let frame = frame()
+        return CGPoint(x: point.x - frame.minX, y: frame.height - 1 - (point.y - frame.minY))
+    }
+
     // MARK: - Window frames
 
     /// The main window's and the strip's frames in global coordinates: the strip is the menu bar's
