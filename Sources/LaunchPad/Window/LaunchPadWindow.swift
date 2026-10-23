@@ -3,7 +3,8 @@ import AppKit
 /// One of the two windows that make up Launchpad's window (REF-DEV-003). Borderless, transparent,
 /// without a shadow; its content view hosts a layer tree: the main window hosts
 /// `WALayerKitWindow.layer`, the strip its copy. Not part of the original (app-architecture: the
-/// project's own bridging classes). Handing its events to the original's event dispatch is 1.4.
+/// project's own bridging classes). Its events reach the original's event dispatch through
+/// `LaunchPadAppDelegate`, as all of the process's events do (REF-OVERLAY-009).
 @MainActor
 @objc(LaunchPadWindow)
 final class LaunchPadWindow: NSWindow {

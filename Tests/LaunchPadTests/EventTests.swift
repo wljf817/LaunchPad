@@ -336,5 +336,38 @@ final class RecordingSpringboard: Springboard {
         #expect(eventCapturingSpringboard == nil)
     }
 
+    @Test("事件来源：接收事件且处理了时丢掉事件；0x400 的按键和系统定义事件不交给 handleEvent:")
+    func appDelegateMonitor() throws {
+        let springboard = RecordingSpringboard()
+        dockGlobals.springboardIsCapturingEvents = true
+        eventCapturingSpringboard = springboard
+        defer {
+            dockGlobals.springboardIsCapturingEvents = false
+            eventCapturingSpringboard = nil
+        }
+        let key = try #require(NSEvent(cgEvent: keyEvent(0, character: 0x61)))
+        springboard.handleEventResult = true
+        #expect(LaunchPadAppDelegate.springboardEvent(key) == nil)
+        springboard.handleEventResult = false
+        #expect(LaunchPadAppDelegate.springboardEvent(key) === key)
+        #expect(springboard.handledEvents == 2)
 
+        let switcherKey = keyEvent(48, character: 0x09)
+        switcherKey.flags = CGEventFlags(rawValue: 0x20100400)  // REF-OVERLAY-009
+        let switcher = try #require(NSEvent(cgEvent: switcherKey))
+        springboard.handleEventResult = true
+        #expect(LaunchPadAppDelegate.springboardEvent(switcher) === switcher)
+        #expect(springboard.handledEvents == 2)
+
+        let systemDefined = try #require(NSEvent.otherEvent(with: .systemDefined, location: .zero, modifierFlags: [],
+                                                            timestamp: 0, windowNumber: 0, context: nil, subtype: 8,
+                                                            data1: 0, data2: 0))
+        #expect(systemDefined.cgEvent?.type.rawValue == 14)
+        #expect(LaunchPadAppDelegate.springboardEvent(systemDefined) === systemDefined)
+        #expect(springboard.handledEvents == 2)
+
+        dockGlobals.springboardIsCapturingEvents = false
+        #expect(LaunchPadAppDelegate.springboardEvent(key) === key)
+        #expect(springboard.handledEvents == 2)
+    }
 }
