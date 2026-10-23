@@ -4,7 +4,7 @@ import QuartzCore
 /// a layer per item of its layer source, laid out in rows from the top, more than fit clipped below.
 @MainActor
 @objc(ECImageGridLayer)
-final class ECImageGridLayer: CALayer, ECLayerSourceClient {
+final class ECImageGridLayer: CALayer {
     @objc weak var layerSource: ECLayerSource?
     var rowHeight: UInt = 0
     var columnWidth: UInt = 0
@@ -12,7 +12,8 @@ final class ECImageGridLayer: CALayer, ECLayerSourceClient {
     var rows = 0
     var columns = 0
     /// NSNotFound until asked from the layer source.
-    @objc private(set) var numberOfItems = UInt(bitPattern: NSNotFound)
+    var _numberOfItems = UInt(bitPattern: NSNotFound)
+    @objc var numberOfItems: UInt { _numberOfItems }
     var itemLayers = NSMutableArray(capacity: 0)
     var itemRange = NSRange(location: 0, length: 0)
     var scaleFactor: Float = 0
@@ -57,7 +58,7 @@ final class ECImageGridLayer: CALayer, ECLayerSourceClient {
     /// and places them row by row from the top (REF-GRID-013).
     @objc func _layoutItemLayers() {
         if numberOfItems == UInt(bitPattern: NSNotFound) {
-            numberOfItems = layerSource?.numberOfItems(for: self) ?? 0
+            _numberOfItems = layerSource?.numberOfItems(for: self) ?? 0
         }
         let bounds = itemsLayer.bounds
         rowHeight = UInt(bitPattern: Int(Int32(bounds.height / CGFloat(rows))))
@@ -107,8 +108,9 @@ final class ECImageGridLayer: CALayer, ECLayerSourceClient {
     }
 
     /// The items changed: count them again and set every item's contents.
+    @objc(layerSourceInvalidated:)
     func layerSourceInvalidated(_ source: ECLayerSource?) {
-        numberOfItems = UInt(bitPattern: NSNotFound)
+        _numberOfItems = UInt(bitPattern: NSNotFound)
         itemRange = NSRange(location: 0, length: 0)
         layout()
     }

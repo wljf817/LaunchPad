@@ -6,7 +6,8 @@ import QuartzCore
 @MainActor
 @objc(ECSBGroup)
 final class ECSBGroup: NSObject, ECLayerSource, ECLayerSourceClient {
-    @objc private(set) var pager: ECSBPager?
+    var _pager: ECSBPager?
+    @objc var pager: ECSBPager? { _pager }
     @objc weak var itemLayer: ECSBGroupItemLayer?
     var _item: ECSBGroupItem?
     var scaleFactor: Float = 0
@@ -17,7 +18,7 @@ final class ECSBGroup: NSObject, ECLayerSource, ECLayerSourceClient {
     @objc(initWithPager:forItemLayer:withItem:scaleFactor:layoutRTL:)
     init(pager: ECSBPager?, forItemLayer itemLayer: ECSBGroupItemLayer?, withItem item: ECSBGroupItem?,
          scaleFactor: Float, layoutRTL: Bool) {
-        self.pager = pager
+        _pager = pager
         self.itemLayer = itemLayer
         _item = item
         isNewGroup = false

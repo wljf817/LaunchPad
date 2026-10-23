@@ -7,8 +7,9 @@ import Foundation
 class ECSBGroupItem: ECSBContainerItem {
     @objc weak var group: ECSBGroup?
 
+    /// The item layer as it is, without checking its class, as the original returns it.
     @objc var groupItemLayer: ECSBGroupItemLayer? {
-        get { itemLayer as? ECSBGroupItemLayer }
+        get { unsafeBitCast(itemLayer, to: ECSBGroupItemLayer?.self) }
         set { itemLayer = newValue }
     }
 }
