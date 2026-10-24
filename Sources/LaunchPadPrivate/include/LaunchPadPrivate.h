@@ -86,14 +86,13 @@ extern bool CGSInputModifierKeyState(int32_t unknown, int32_t key);
 // wallpaper window (REF-OVERLAY-003, REF-DEV-015). Needs no permission.
 extern CFArrayRef _Nullable CGSHWCaptureWindowList(CGSConnectionID cid, CGSWindowID *wids, int32_t count, uint32_t options) CF_RETURNS_RETAINED;
 
-// Spaces: whether a display is animating a space switch (REF-DEV-007), the
-// active space and the managed displays' spaces (REF-DEV-015). 26.6.2 only.
+// Spaces: whether a display is animating a space switch (REF-DEV-007) and the
+// managed displays' spaces (REF-DEV-015). 26.6.2 only.
 extern bool CGSManagedDisplayIsAnimating(CGSConnectionID cid, CFStringRef displayUUID);
-extern uint64_t CGSGetActiveSpace(CGSConnectionID cid);
 extern CFArrayRef _Nullable CGSCopyManagedDisplaySpaces(CGSConnectionID cid) CF_RETURNS_RETAINED;
 // The spaces a window belongs to (mask 7: every kind of space), as an array of
-// space ids. The strip over the menu bar takes its height from the active
-// space's menu bar window (REF-DEV-003). 27.0.1 and 26.6.2.
+// space ids. The strip over the menu bar takes its height from the menu bar
+// window of its display's current space (REF-DEV-003). 27.0.1 and 26.6.2.
 extern CFArrayRef _Nullable CGSCopySpacesForWindows(CGSConnectionID cid, int32_t mask, CFArrayRef wids) CF_RETURNS_RETAINED;
 
 // Keyboard focus without activating the process (REF-OVERLAY-007).

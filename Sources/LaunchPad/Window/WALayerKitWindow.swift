@@ -99,12 +99,16 @@ final class WALayerKitWindow: WAWindow {
         return (main, strip)
     }
 
-    /// The height of the window server's menu bar window of the active space on the display at
+    /// The height of the window server's menu bar window of the current space of the display at
     /// `frame`, shown or not: in a full-screen app's space the menu bar is off screen until it is
-    /// shown over the strip's area.
+    /// shown over the strip's area. Each display has its own menu bar and current space.
     static func menuBarHeight(in frame: CGRect) -> CGFloat {
         let connection = CGSMainConnectionID()
-        let space = NSNumber(value: CGSGetActiveSpace(connection))
+        var display: CGDirectDisplayID = 0
+        var count: UInt32 = 0
+        CGGetDisplaysWithPoint(CGPoint(x: frame.midX, y: frame.midY), 1, &display, &count)
+        guard count == 1, let current = spaces.currentSpace(forDisplay: display) else { return 0 }
+        let space = NSNumber(value: current.spid)
         let windows = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String: Any]] ?? []
         for info in windows where info[kCGWindowName as String] as? String == "Menubar" {
             guard let bounds = info[kCGWindowBounds as String] as? NSDictionary,
