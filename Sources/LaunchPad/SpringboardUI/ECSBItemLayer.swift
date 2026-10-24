@@ -20,6 +20,9 @@ class ECSBItemLayer: CALayer, ECSBGridItemSource {
     /// Compared by identity with a new title, as the original does.
     var _title: NSString?
     var magnified = false
+    var _darkened = false
+    /// Keeps the grid layer from placing this item layer (research paper §5.9).
+    @objc var disableLayout = false
     /// Set while the contents are being set, so that the layout runs once after them.
     var internalDisableLayout = false
     var _visible = false
@@ -50,6 +53,24 @@ class ECSBItemLayer: CALayer, ECSBGridItemSource {
     @objc var backdropLayer: CALayer? { _backdropLayer }
 
     @objc var isGroupItem: Bool { false }
+
+    /// The pressed look (REF-LAUNCH-001): a gray multiply filter on the icon. The callers choose
+    /// whether it animates. The status, progress and progress label layers, and the progress filter,
+    /// come with phase 6.
+    @objc var darkened: Bool {
+        get { _darkened }
+        set {
+            guard _darkened != newValue else { return }
+            _darkened = newValue
+            if newValue {
+                let filter = CAFilter(type: kCAFilterMultiplyColor)
+                filter.setValue(CGColor(gray: 0.4, alpha: 1), forKey: "inputColor")  // REF-LAUNCH-001
+                imageLayer.filters = [filter]
+            } else {
+                imageLayer.filters = nil
+            }
+        }
+    }
 
     // MARK: - Visibility and purging (REF-GRID-015)
 

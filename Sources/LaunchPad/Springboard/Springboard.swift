@@ -8,8 +8,8 @@ import os
 /// grid (REF-GRID-001). It is the grid components' data source.
 @MainActor
 @objc(Springboard)
-class Springboard: NSObject, ECModalEventHandler, ECEventHandlingDelegate, ECSBDataSource, ECSBActionHandling,
-                   CALayerDelegate {
+class Springboard: NSObject, ECModalEventHandler, ECEventHandlingDelegate, ECSBDelegate, ECSBDataSource,
+                   ECSBActionHandling, CALayerDelegate {
     let window: WALayerKitWindow
     @objc let layer: CALayer
     let desktopContainerLayer: CALayer
@@ -102,6 +102,12 @@ class Springboard: NSObject, ECModalEventHandler, ECEventHandlingDelegate, ECSBD
     }
 
     @objc var visible: Bool { _visible }
+
+    /// The main grid's editing flag (research paper §5.9).
+    @objc var editing: Bool {
+        get { springboard.editing }
+        set { springboard.editing = newValue }
+    }
 
     // MARK: - Startup (REF-GRID-001)
 
@@ -665,6 +671,8 @@ class Springboard: NSObject, ECModalEventHandler, ECEventHandlingDelegate, ECSBD
             // another process (REF-DEV-003).
             CGSSetWindowLevel(connection, containerWindow().wid(), 27)
         }
+        // Leaving the delete state comes with phase 4.
+        springboard.editing = false
         if dockGlobals.externalMenuIsUp {
             CFNotificationCenterPostNotification(CFNotificationCenterGetDistributedCenter(),
                                                  CFNotificationName("com.apple.HIToolbox.cancelMenuTrackingNotification" as CFString),
@@ -747,6 +755,8 @@ class Springboard: NSObject, ECModalEventHandler, ECEventHandlingDelegate, ECSBD
         CPSReleaseKeyFocusOnConnection(Int32(bitPattern: dockGlobals.dockConnection))
         dockGlobals.springboardIsCapturingEvents = false
         eventCapturingSpringboard = nil
+        // Leaving the delete state comes with phase 4.
+        springboard.editing = false
     }
 
     @objc(_cleanupAfterExitAnimation:openCount:)

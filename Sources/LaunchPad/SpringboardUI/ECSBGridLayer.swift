@@ -22,7 +22,8 @@ final class ECSBGridLayer: ECGridLayer {
     /// each in front of the items layer's sublayers, so they end up in reverse item order, and drops
     /// item layers from the end when there are too many (REF-GRID-003); gives them their contents when
     /// the items changed (REF-GRID-014); then places the item layers row by row from the top
-    /// (REF-GRID-008) and lays out those that did not just get their contents.
+    /// (REF-GRID-008) and lays out those that did not just get their contents; item layers whose
+    /// layout is disabled are skipped (research paper §5.9).
     override func _layoutItemLayers() {
         let bounds = itemsLayer.bounds
         if autoCalcSizes {
@@ -62,7 +63,9 @@ final class ECSBGridLayer: ECGridLayer {
         var column = 0
         for (index, element) in itemLayers.enumerated() {
             let itemLayer = element as! CALayer
-            if index < rows * columns {
+            if (itemLayer as? ECSBItemLayer)?.disableLayout == true {
+                // Not placed (research paper §5.9).
+            } else if index < rows * columns {
                 if !itemLayer.isHidden {
                     itemLayer.position = position
                     itemLayer.bounds = cell

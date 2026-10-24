@@ -108,6 +108,15 @@ protocol ECEventHandling: NSObjectProtocol {
 @objc(ECEventHandlingDelegate)
 protocol ECEventHandlingDelegate: NSObjectProtocol {}
 
+/// The controller as the delegate of the grid components. The pager tells it when editing begins and
+/// ends; no class of the original implements either method (research paper §5.9).
+@MainActor
+@objc(ECSBDelegate)
+protocol ECSBDelegate: NSObjectProtocol {
+    @objc optional func didBeginEditing()
+    @objc optional func didEndEditing()
+}
+
 /// The controller as the handler of the grid's item actions.
 @MainActor
 @objc(ECSBActionHandling)

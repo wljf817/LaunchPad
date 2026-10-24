@@ -9,6 +9,7 @@ class ECSBPage: ECPage, ECLayerSource, ECSBGridDataSource {
     @objc var item: ECSBPageItem
     var scaleFactor: Float
     var layoutRTL: Bool
+    @objc var editing = false
 
     @objc(initWithPager:andLayer:forIndex:withItem:scaleFactor:layoutRTL:)
     init(pager: ECPager?, layer: CALayer?, index: UInt, item: ECSBPageItem, scaleFactor: Float, layoutRTL: Bool) {

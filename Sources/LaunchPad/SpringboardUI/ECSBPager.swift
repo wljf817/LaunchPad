@@ -9,6 +9,7 @@ class ECSBPager: ECPager {
     /// Handles the actions on the grid: `ECSBSpringboard` (REF-OVERLAY-010).
     @objc weak var gridActionHandler: ECSBGridActionHandling?
     var scaleFactor: Float = 0
+    var _editing = false
     var _visible = false
 
     @objc(initWithPagerSource:scaleFactor:layoutRTL:)
@@ -44,6 +45,27 @@ class ECSBPager: ECPager {
         for case let page as ECSBPage in _pages {
             if !(exceptCurrentPage && page === current) {
                 page.purgeItemContents()
+            }
+        }
+    }
+
+    /// Sets the editing flag of the pager and of its pages, then tells the handler, whether or not the
+    /// flag changed (research paper §5.9). The open folder's branch comes with phase 5; removing the
+    /// empty pages when editing ends without a drag comes with phase 4.
+    @objc var editing: Bool {
+        get { _editing }
+        set {
+            if _editing != newValue {
+                _editing = newValue
+                for case let page as ECSBPage in _pages {
+                    page.editing = newValue
+                }
+            }
+            let delegate = handler as? ECSBDelegate
+            if newValue {
+                delegate?.didBeginEditing?()
+            } else {
+                delegate?.didEndEditing?()
             }
         }
     }

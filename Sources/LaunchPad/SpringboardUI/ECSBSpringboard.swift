@@ -44,6 +44,11 @@ final class ECSBSpringboard: NSObject, ECPagerSource, ECSBGridActionHandling, EC
         _pager
     }
 
+    @objc var editing: Bool {
+        get { pager.editing }
+        set { pager.editing = newValue }
+    }
+
     @objc var layer: ECSBLayer {
         pager.layer as! ECSBLayer
     }

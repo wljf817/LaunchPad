@@ -172,6 +172,10 @@ extern NSString * const kCAFilterPlusL;
 // The compositing filter of a folder icon's tint layer (REF-GRID-013).
 extern NSString * const kCAFilterDarkenBlendMode;
 
+// The filter that darkens a pressed item's icon (REF-LAUNCH-001; launch-app). Exported by
+// QuartzCore in the macOS 27.0 SDK; checked on macOS 26.6.2 (25G83) when the item is pressed.
+extern NSString * const kCAFilterMultiplyColor;
+
 // LaunchServices' record of an installed app; public on iOS, not declared on macOS.
 // Tells whether a scanned app is a web app (flag 0x1000, REF-LAYOUT-003).
 @interface LSApplicationRecord : NSObject
