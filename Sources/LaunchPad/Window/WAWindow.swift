@@ -30,8 +30,17 @@ class WAWindow: NSObject {
     @objc(orderImmediate:otherWindow:with:)
     func orderImmediate(_ order: Int32, otherWindow: UInt32, with transaction: OpaquePointer?) {
         if order != 0, mainWindow?.isVisible == false || stripWindow?.isVisible == false {
+            // With more than one display AppKit moves the strip into the screen's visible frame when it
+            // first orders it in, past `-constrainFrameRect:toScreen:`; the frames set before go back.
+            let windows = [mainWindow, stripWindow]
+            let frames = windows.map { $0?.frame }
             mainWindow?.orderFrontRegardless()
             stripWindow?.orderFrontRegardless()
+            for (window, frame) in zip(windows, frames) {
+                if let window, let frame, window.frame != frame {
+                    window.setFrame(frame, display: false)
+                }
+            }
             return
         }
         guard let transaction else { return }
