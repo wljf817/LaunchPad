@@ -181,6 +181,11 @@ final class EditingDelegate: NSObject, ECSBDataSource, ECSBDelegate {
     init() {
         handler = RecordingHandler(layer: scene.top)
         scene.grid.pager.gridActionHandler = actions
+    }
+
+    /// Puts the handler on the shared controller for the test body only: other suites' tests can run
+    /// between a suite's initializer and its test, and EventTests expects the controller empty.
+    func registerHandler() {
         ECModalEventController.sharedController().addHandler(handler, externalEventSource: true, usingMouseHysteresis: true)
     }
 
@@ -190,6 +195,7 @@ final class EditingDelegate: NSObject, ECSBDataSource, ECSBDelegate {
 
     @Test("按下时拖动捕获记下序号、按下点和 item layer 在滚动 layer 里的 frame")
     func dragCaptureRecordsPress() throws {
+        registerHandler()
         defer { done() }
         let index = 3
         let point = scene.icon(index)
@@ -212,6 +218,7 @@ final class EditingDelegate: NSObject, ECSBDataSource, ECSBDelegate {
 
     @Test("pager 的 currentPage 越界时为 nil")
     func currentPage() {
+        registerHandler()
         defer { done() }
         #expect(scene.grid.pager.currentPage === scene.page)
         let pages = scene.grid.pager.pages
@@ -223,6 +230,7 @@ final class EditingDelegate: NSObject, ECSBDataSource, ECSBDelegate {
 
     @Test("在图标上单击：按下时变暗、pager 编辑，松开时恢复并交给 grid action handler")
     func clickIcon() {
+        registerHandler()
         defer { done() }
         let index = 3
         let itemLayer = scene.itemLayer(index)
@@ -243,6 +251,7 @@ final class EditingDelegate: NSObject, ECSBDataSource, ECSBDelegate {
 
     @Test("点名称：不变暗，不交给 grid action，像点空白处一样取消")
     func clickName() {
+        registerHandler()
         defer { done() }
         let itemLayer = scene.itemLayer(3)
         scene.send(.leftMouseDown, scene.name(3))
@@ -254,6 +263,7 @@ final class EditingDelegate: NSObject, ECSBDataSource, ECSBDelegate {
 
     @Test("在图标上按下后移动达到阈值再松开：不交给 grid action，不取消，图标恢复")
     func dragOnIcon() {
+        registerHandler()
         defer { done() }
         let itemLayer = scene.itemLayer(3)
         let start = scene.icon(3)
@@ -271,6 +281,7 @@ final class EditingDelegate: NSObject, ECSBDataSource, ECSBDelegate {
 
     @Test("在图标下边缘按下、移动不到阈值、松在名称上：取消，图标恢复")
     func slideOntoName() {
+        registerHandler()
         defer { done() }
         let index = 3
         let itemLayer = scene.itemLayer(index)

@@ -18,6 +18,7 @@ import Testing
 
     @Test("窄条在上，主窗口是其余部分")
     func windowFrames() {
+        Self.waitForMenuBar()
         let frame = CGDisplayBounds(CGMainDisplayID())
         let (main, strip) = WALayerKitWindow.windowFrames(for: frame)
         #expect(strip.minY == frame.minY)
@@ -209,7 +210,20 @@ import Testing
         return band
     }
 
+    /// These tests read the system's menu bar. While the main display switches spaces or an app enters
+    /// or leaves full screen, the menu bar windows slide sideways and for a moment none is at the
+    /// display's edge (whether or not the window server reports a space animation); waits until one is,
+    /// at most 10 s.
+    static func waitForMenuBar() {
+        let frame = CGDisplayBounds(CGMainDisplayID())
+        let deadline = Date().addingTimeInterval(10)
+        while WALayerKitWindow.menuBarHeight(in: frame) == 0, Date() < deadline {
+            usleep(20_000)
+        }
+    }
+
     func makeWindow() -> WALayerKitWindow {
+        Self.waitForMenuBar()
         let display = CGMainDisplayID()
         let window = WALayerKitWindow(frame: CGDisplayBounds(display), connection: UInt32(bitPattern: CGSMainConnectionID()),
                                       display: display, tags: 0x400, level: 20)

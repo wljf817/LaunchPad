@@ -238,3 +238,65 @@ func expectItems(of container: ECSBContainerItem, mirroring group: LPGroup, sour
         }
     }
 }
+
+/// What a test observes while it runs, asserted after `withoutIconCacheEviction` has picked the run.
+@MainActor
+final class Checks {
+    private(set) var results: [(label: String, passed: Bool)] = []
+
+    func check(_ condition: Bool, _ label: String) {
+        results.append((label, condition))
+    }
+
+    /// The value, or nil with a failed check, in place of `#require` inside a run.
+    func require<T>(_ value: T?, _ label: String) -> T? {
+        check(value != nil, label)
+        return value
+    }
+}
+
+/// Set from a memory pressure source on another queue.
+private final class MemoryPressureFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var raised = false
+
+    func raise() { lock.withLock { raised = true } }
+    func reset() { lock.withLock { raised = false } }
+    var isRaised: Bool { lock.withLock { raised } }
+}
+
+/// Runs `body` until a run in which the system did not take memory back, at most five times, then
+/// asserts that run's checks. The model's icon caches are `NSCache`s (REF-GRID-012), which drop their
+/// objects when the system signals memory pressure, so a test that reads back an icon it has just put
+/// there would fail for a reason that is not the code's. A run counts as disturbed when a memory
+/// pressure notification arrived while it ran, or when an object it never touched left the caches.
+@MainActor
+func withoutIconCacheEviction(sourceLocation: SourceLocation = #_sourceLocation,
+                              _ body: (Checks) async throws -> Void) async rethrows {
+    let pressure = MemoryPressureFlag()
+    let source = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: .global())
+    source.setEventHandler { pressure.raise() }
+    source.activate()
+    defer { source.cancel() }
+    for attempt in 1...5 {
+        pressure.reset()
+        let key = "LaunchPadTests-sentinel-\(UUID().uuidString)" as NSString
+        let sentinel = NSObject()
+        LPRunnable.iconCache.setObject(sentinel, forKey: key)
+        LPRunnable.miniIconCache.setObject(sentinel, forKey: key)
+        let checks = Checks()
+        try await body(checks)
+        // A notification may still be on its way.
+        try? await Task.sleep(for: .milliseconds(50))
+        let evicted = LPRunnable.iconCache.object(forKey: key) == nil || LPRunnable.miniIconCache.object(forKey: key) == nil
+        LPRunnable.iconCache.removeObject(forKey: key)
+        LPRunnable.miniIconCache.removeObject(forKey: key)
+        if (pressure.isRaised || evicted) && attempt < 5 {
+            continue
+        }
+        for result in checks.results {
+            #expect(result.passed, Comment(rawValue: result.label), sourceLocation: sourceLocation)
+        }
+        return
+    }
+}

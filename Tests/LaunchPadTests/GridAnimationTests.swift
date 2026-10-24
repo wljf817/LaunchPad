@@ -39,22 +39,24 @@ struct GridAnimationTests {
     }
 
     @Test("应用设为 NO 时清掉自己的图标，进程内缓存里的还在")
-    func runnableDropsOwnIcons() throws {
-        let app = makeTestApp("Purged")
-        app.setShouldCacheIcons(true)
+    func runnableDropsOwnIcons() async throws {
         let icon = try #require(solidImage(96))
         let mini = try #require(solidImage(22))
-        app.icon = icon
-        app.miniIcon = mini
-        #expect(app._icon === icon && app._miniIcon === mini)
+        await withoutIconCacheEviction { checks in
+            let app = makeTestApp("Purged")
+            app.setShouldCacheIcons(true)
+            app.icon = icon
+            app.miniIcon = mini
+            checks.check(app._icon === icon && app._miniIcon === mini, "the app keeps both icons while caching")
 
-        app.setShouldCacheIcons(false)
-        #expect(app._icon == nil && app._miniIcon == nil)
-        #expect(app.icon === icon)
-        #expect(app.miniIcon === mini)
-        #expect(app._icon == nil)
-        app.icon = nil
-        app.miniIcon = nil
+            app.setShouldCacheIcons(false)
+            checks.check(app._icon == nil && app._miniIcon == nil, "the app drops its own icons")
+            checks.check(app.icon === icon, "the icon comes from the cache")
+            checks.check(app.miniIcon === mini, "the mini icon comes from the cache")
+            checks.check(app._icon == nil, "the cache's icon is not kept by the app")
+            app.icon = nil
+            app.miniIcon = nil
+        }
     }
 
     // MARK: - Visibility and purging down the grid (REF-GRID-015)

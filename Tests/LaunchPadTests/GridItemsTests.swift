@@ -120,93 +120,126 @@ struct GridItemsTests {
     // MARK: - The model's icons (REF-GRID-012)
 
     @Test("图标放进进程内的缓存，_shouldCacheIcons 为 NO 时模型对象不另外持有")
-    func iconCache() throws {
-        let app = makeTestApp("Cached")
+    func iconCache() async throws {
         let icon = try #require(solidImage(96))
-        app.icon = icon
-        #expect(LPRunnable.iconCache.object(forKey: app.uuid! as NSString) === icon)
-        #expect(app._icon == nil)
-        #expect(app.icon === icon)
-        app.setShouldCacheIcons(true)
-        #expect(app.icon === icon)
-        #expect(app._icon === icon)
         let mini = try #require(solidImage(22))
-        app.miniIcon = mini
-        #expect(app._miniIcon === mini)
-        // The original keeps the item's own mini icon when the mini icon is set to nil.
-        app.miniIcon = nil
-        #expect(LPRunnable.miniIconCache.object(forKey: app.uuid! as NSString) == nil)
-        #expect(app._miniIcon === mini)
-        app.icon = nil
-        #expect(app._icon == nil)
-        #expect(LPRunnable.iconCache.object(forKey: app.uuid! as NSString) == nil)
+        await withoutIconCacheEviction { checks in
+            let app = makeTestApp("Cached")
+            app.icon = icon
+            checks.check(LPRunnable.iconCache.object(forKey: app.uuid! as NSString) === icon, "the icon is in the cache")
+            checks.check(app._icon == nil, "the app does not keep it")
+            checks.check(app.icon === icon, "the icon comes from the cache")
+            app.setShouldCacheIcons(true)
+            checks.check(app.icon === icon, "the icon while caching")
+            checks.check(app._icon === icon, "the app keeps it while caching")
+            app.miniIcon = mini
+            checks.check(app._miniIcon === mini, "the app keeps the mini icon while caching")
+            // The original keeps the item's own mini icon when the mini icon is set to nil.
+            app.miniIcon = nil
+            checks.check(LPRunnable.miniIconCache.object(forKey: app.uuid! as NSString) == nil, "the mini icon leaves the cache")
+            checks.check(app._miniIcon === mini, "the app's own mini icon stays")
+            app.icon = nil
+            checks.check(app._icon == nil, "the app's own icon goes")
+            checks.check(LPRunnable.iconCache.object(forKey: app.uuid! as NSString) == nil, "the icon leaves the cache")
+        }
+    }
+
+    @Test("缓存被系统清掉的那一遍不算：重跑，只按没被打扰的那一遍断言")
+    func evictedRunIsRepeated() async {
+        var runs = 0
+        await withoutIconCacheEviction { checks in
+            runs += 1
+            let key = "LaunchPadTests-evicted-run" as NSString
+            LPRunnable.iconCache.setObject(NSObject(), forKey: key)
+            if runs == 1 {
+                // What NSCache does under memory pressure.
+                LPRunnable.iconCache.removeAllObjects()
+            }
+            checks.check(LPRunnable.iconCache.object(forKey: key) != nil, "the object stays in the cache")
+            LPRunnable.iconCache.removeObject(forKey: key)
+        }
+        #expect(runs == 2)
     }
 
     @Test("写库存宽度和 PNG；读库建模型时图标进缓存；缓存里没有时从库里读")
     func iconStorage() async throws {
-        let directory = TemporaryDirectory()
-        let path = directory.path("db")
-        let bundle = try makeAppBundle(at: directory.path("Stored.app"), bundleID: "com.example.stored")
-        let (storage, root, _, _) = await openStorage(at: path)
-        let page = LPPage(items: nil)
-        try #require(root).children.add(page)
-        let app = try #require(LPApp(url: bundle, forScan: 1))
-        page.children.add(app)
-        app.icon = try #require(solidImage(96))
-        app.miniIcon = try #require(solidImage(22))
-        app.updateImageStorage()
-        storage.markInitialSetupComplete()
-        await waitForDatabase(storage)
-        let rows = queryRows(path, "SELECT size_big, size_mini, image_data, image_data_mini FROM image_cache")
-        let row = try #require(rows.first)
-        #expect(row["size_big"] as? Int64 == 96 && row["size_mini"] as? Int64 == 22)
-        let data = try #require(row["image_data"] as? Data)
-        let source = try #require(CGImageSourceCreateWithData(data as CFData, nil))
-        #expect(CGImageSourceGetType(source) as String? == "public.png")
+        let big = try #require(solidImage(96))
+        let small = try #require(solidImage(22))
+        try await withoutIconCacheEviction { checks in
+            let directory = TemporaryDirectory()
+            let path = directory.path("db")
+            let bundle = try makeAppBundle(at: directory.path("Stored.app"), bundleID: "com.example.stored")
+            let (storage, root, _, _) = await openStorage(at: path)
+            let page = LPPage(items: nil)
+            guard let root = checks.require(root, "the database has a root"),
+                  let app = checks.require(LPApp(url: bundle, forScan: 1), "the app is made") else { return }
+            root.children.add(page)
+            page.children.add(app)
+            app.icon = big
+            app.miniIcon = small
+            app.updateImageStorage()
+            storage.markInitialSetupComplete()
+            await waitForDatabase(storage)
+            let rows = queryRows(path, "SELECT size_big, size_mini, image_data, image_data_mini FROM image_cache")
+            guard let row = checks.require(rows.first, "the icons are stored") else { return }
+            checks.check(row["size_big"] as? Int64 == 96 && row["size_mini"] as? Int64 == 22, "the stored widths")
+            guard let data = checks.require(row["image_data"] as? Data, "the stored icon"),
+                  let source = checks.require(CGImageSourceCreateWithData(data as CFData, nil), "the stored icon reads")
+            else { return }
+            checks.check(CGImageSourceGetType(source) as String? == "public.png", "the stored icon is a PNG")
 
-        // A miss reads the database, and the image arrives on the main queue.
-        LPRunnable.iconCache.removeObject(forKey: app.uuid! as NSString)
-        #expect(app.icon == nil)
-        #expect(app.loadingLarge)
-        await waitForDatabase(storage)
-        await drainMainQueue()
-        let loaded = try #require(LPRunnable.iconCache.object(forKey: app.uuid! as NSString))
-        #expect((loaded as! CGImage).width == 96)
-        #expect(!app.loadingLarge)
+            // A miss reads the database, and the image arrives on the main queue.
+            LPRunnable.iconCache.removeObject(forKey: app.uuid! as NSString)
+            checks.check(app.icon == nil, "a miss gives no icon at once")
+            checks.check(app.loadingLarge, "a miss starts loading")
+            await waitForDatabase(storage)
+            await drainMainQueue()
+            guard let loaded = checks.require(LPRunnable.iconCache.object(forKey: app.uuid! as NSString),
+                                              "the loaded icon is in the cache") else { return }
+            checks.check((loaded as! CGImage).width == 96, "the loaded icon's width")
+            checks.check(!app.loadingLarge, "loading ends")
 
-        // Reading the database again puts both icons into the caches with their sizes.
-        LPRunnable.iconCache.removeObject(forKey: app.uuid! as NSString)
-        LPRunnable.miniIconCache.removeObject(forKey: app.uuid! as NSString)
-        let (_, reread, _, _) = await openStorage(at: path, readOnly: true)
-        let copy = try #require(((reread?.children.firstObject as? LPPage)?.children.firstObject) as? LPRunnable)
-        #expect(copy.largeIconSize == 96 && copy.miniIconSize == 22)
-        #expect((LPRunnable.iconCache.object(forKey: copy.uuid! as NSString) as! CGImage?)?.width == 96)
-        #expect((LPRunnable.miniIconCache.object(forKey: copy.uuid! as NSString) as! CGImage?)?.width == 22)
+            // Reading the database again puts both icons into the caches with their sizes.
+            LPRunnable.iconCache.removeObject(forKey: app.uuid! as NSString)
+            LPRunnable.miniIconCache.removeObject(forKey: app.uuid! as NSString)
+            let (_, reread, _, _) = await openStorage(at: path, readOnly: true)
+            guard let copy = checks.require(((reread?.children.firstObject as? LPPage)?.children.firstObject) as? LPRunnable,
+                                            "the app is read again") else { return }
+            checks.check(copy.largeIconSize == 96 && copy.miniIconSize == 22, "the sizes read again")
+            checks.check((LPRunnable.iconCache.object(forKey: copy.uuid! as NSString) as! CGImage?)?.width == 96,
+                         "the icon read again is in the cache")
+            checks.check((LPRunnable.miniIconCache.object(forKey: copy.uuid! as NSString) as! CGImage?)?.width == 22,
+                         "the mini icon read again is in the cache")
+        }
     }
 
     @Test("生成的图标与直接用 IconServices 画出的逐像素相同，取完后写库；尺寸没变时不再生成")
     func iconGeneration() async throws {
-        let directory = TemporaryDirectory()
-        let path = directory.path("db")
-        let (storage, root, _, _) = await openStorage(at: path)
-        let page = LPPage(items: nil)
-        try #require(root).children.add(page)
-        let url = URL(fileURLWithPath: "/System/Applications/Calculator.app")
-        let app = try #require(LPApp(url: url, forScan: 1))
-        page.children.add(app)
-        app.retrieveImageOfLargeSize(96, andMiniSize: 22)
-        let count = app.loadingCounter.load(ordering: .sequentiallyConsistent)
-        await waitForIconGeneration(storage)
-        let icon = try #require(app.icon as! CGImage?)
-        let mini = try #require(app.miniIcon as! CGImage?)
-        #expect(icon.width == 96 && mini.width == 22)
-        #expect(pixels(icon) == pixels(directIcon(url, 96)))
-        #expect(pixels(mini) == pixels(directIcon(url, 22)))
-        let row = try #require(queryRows(path, "SELECT size_big, size_mini, image_data FROM image_cache").first)
-        #expect(row["size_big"] as? Int64 == 96 && row["size_mini"] as? Int64 == 22)
-        #expect(row["image_data"] as? Data != nil)
-        app.retrieveImageOfLargeSize(96, andMiniSize: 22)
-        #expect(app.loadingCounter.load(ordering: .sequentiallyConsistent) == count)
+        await withoutIconCacheEviction { checks in
+            let directory = TemporaryDirectory()
+            let path = directory.path("db")
+            let (storage, root, _, _) = await openStorage(at: path)
+            let page = LPPage(items: nil)
+            let url = URL(fileURLWithPath: "/System/Applications/Calculator.app")
+            guard let root = checks.require(root, "the database has a root"),
+                  let app = checks.require(LPApp(url: url, forScan: 1), "the app is made") else { return }
+            root.children.add(page)
+            page.children.add(app)
+            app.retrieveImageOfLargeSize(96, andMiniSize: 22)
+            let count = app.loadingCounter.load(ordering: .sequentiallyConsistent)
+            await waitForIconGeneration(storage)
+            guard let icon = checks.require(app.icon as! CGImage?, "the icon is made"),
+                  let mini = checks.require(app.miniIcon as! CGImage?, "the mini icon is made") else { return }
+            checks.check(icon.width == 96 && mini.width == 22, "the widths")
+            checks.check(pixels(icon) == pixels(directIcon(url, 96)), "the icon's pixels")
+            checks.check(pixels(mini) == pixels(directIcon(url, 22)), "the mini icon's pixels")
+            guard let row = checks.require(queryRows(path, "SELECT size_big, size_mini, image_data FROM image_cache").first,
+                                           "the icons are stored") else { return }
+            checks.check(row["size_big"] as? Int64 == 96 && row["size_mini"] as? Int64 == 22, "the stored widths")
+            checks.check(row["image_data"] as? Data != nil, "the stored icon")
+            app.retrieveImageOfLargeSize(96, andMiniSize: 22)
+            checks.check(app.loadingCounter.load(ordering: .sequentiallyConsistent) == count, "no second generation")
+        }
     }
 
     /// The app's icon drawn the way the original draws it, but into a plain bitmap context.
