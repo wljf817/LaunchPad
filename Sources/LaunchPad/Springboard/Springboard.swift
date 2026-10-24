@@ -593,6 +593,93 @@ class Springboard: NSObject, ECModalEventHandler, ECEventHandlingDelegate, ECSBD
         }
     }
 
+    // MARK: - Launching (REF-LAUNCH-002, REF-LAUNCH-003)
+
+    /// The grid's action on an item: an app is launched from its icon's rectangle (REF-LAUNCH-003).
+    /// Pausing and resuming a downloading app come with phase 6.
+    @objc(performActionForItem:withEvent:sender:)
+    func performAction(forItem item: AnyObject?, with event: ECEvent?, sender: AnyObject?) {
+        guard let runnable = item as? LPRunnable else { return }
+        _launchRunnable(runnable, withImageRect: springboard.globalBoundsOfIcon(forItem: runnable), withEvent: event)
+    }
+
+    /// Opens `runnable` once its bookmark is resolved, and only after `-handleRunnableOpen:…` says it
+    /// did, zooms its icon and closes (research paper §5.9). `LPSpringboard` overrides it and does not
+    /// call it. Clearing the new-app mark comes with phase 6.
+    @objc(_launchRunnable:withImageRect:withEvent:)
+    func _launchRunnable(_ runnable: LPRunnable?, withImageRect imageRect: CGRect, withEvent event: ECEvent?) {
+        let icon = UncheckedBox(runnable?.icon)
+        guard let runnable else { return }
+        let item = UncheckedBox(runnable)
+        runnable.resolveURLFromBookMark(true) { url in
+            DispatchQueue.main.async {
+                let runnable = item.value
+                self._refreshItem(runnable, property: "notFound")
+                guard let url, !runnable.notFound else { return }
+                var toFrame = CGRect.zero
+                guard self.handleRunnableOpen(runnable, atURL: url, fromFrame: imageRect, toFrame: &toFrame) else { return }
+                if let icon = icon.value {
+                    self.performOpenAnimation(forRunnable: runnable, withImage: icon, atFrame: imageRect,
+                                              toFrame: self.containerWindow().convertRectFromGlobal(toFrame))
+                }
+                self.setVisible(false, reason: "launch runnable in Springboard superclass")
+            }
+        }
+    }
+
+    /// Opens the runnable; the controller itself opens nothing (research paper §5.9).
+    @objc(handleRunnableOpen:atURL:fromFrame:toFrame:)
+    func handleRunnableOpen(_ runnable: LPRunnable?, atURL url: URL?, fromFrame: CGRect,
+                            toFrame: UnsafeMutablePointer<CGRect>?) -> Bool {
+        false
+    }
+
+    /// A copy of the icon on the window's root layer, above the overlay container, zooms from
+    /// `atFrame` towards `toFrame` and fades (REF-LAUNCH-002). An empty target keeps its position and
+    /// a zero target size scales it by 2.
+    @objc(performOpenAnimationForRunnable:withImage:atFrame:toFrame:)
+    func performOpenAnimation(forRunnable runnable: LPRunnable?, withImage image: AnyObject?, atFrame: CGRect,
+                              toFrame: CGRect) {
+        // REF-LAUNCH-002
+        let scaleX = toFrame.width != 0 ? toFrame.width / atFrame.width : 2
+        let scaleY = toFrame.height != 0 ? toFrame.height / atFrame.height : 2
+        let transform = CATransform3DMakeScale(scaleX, scaleY, 1)
+        let layer = CALayer()
+        // REF-LAUNCH-002; slow motion as the open and close (REF-OVERLAY-008).
+        let duration: CFTimeInterval = dockGlobals.slowMotionAllowed && ECModalEventController.shiftKeyDown() ? 5 : 0.25
+        layer.contents = image
+        let disabled = disableActions()
+        layer.frame = atFrame
+        layer.opacity = 0.9  // REF-LAUNCH-002
+        layer.transform = CATransform3DIdentity
+        containerWindow().layer.addSublayer(layer)
+        if disabled {
+            CATransaction.setDisableActions(false)
+        }
+        CATransaction.flush()
+        CATransaction.setAnimationDuration(duration)
+        CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeOut))  // REF-LAUNCH-002
+        // The original sets Dock's window-animation duration here too; no window animation follows
+        // (REF-DEV-011).
+        CATransaction.begin()
+        let zoomed = UncheckedBox(layer)
+        CATransaction.setCompletionBlock {
+            MainActor.assumeIsolated {
+                let disabled = disableActions()
+                zoomed.value.removeFromSuperlayer()
+                if disabled {
+                    CATransaction.setDisableActions(false)
+                }
+            }
+        }
+        layer.transform = transform
+        if !toFrame.isEmpty {
+            layer.position = CGPoint(x: toFrame.minX + toFrame.width * 0.5, y: toFrame.minY + toFrame.height * 0.5)
+        }
+        layer.opacity = 0.1  // REF-LAUNCH-002
+        CATransaction.commit()
+    }
+
     // MARK: - Open and close (REF-OVERLAY-007)
 
     @objc(setVisible:reason:)

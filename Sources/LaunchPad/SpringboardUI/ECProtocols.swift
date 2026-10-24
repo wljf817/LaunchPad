@@ -121,6 +121,9 @@ protocol ECSBDelegate: NSObjectProtocol {
 @MainActor
 @objc(ECSBActionHandling)
 protocol ECSBActionHandling: NSObjectProtocol {
+    @objc(performActionForItem:withEvent:sender:)
+    func performAction(forItem item: AnyObject?, with event: ECEvent?, sender: AnyObject?)
+
     @objc(cancelActionWithEvent:sender:)
     optional func cancelAction(with event: ECEvent?, sender: AnyObject?)
 }
@@ -129,6 +132,9 @@ protocol ECSBActionHandling: NSObjectProtocol {
 @MainActor
 @objc(ECSBGridActionHandling)
 protocol ECSBGridActionHandling: NSObjectProtocol {
+    @objc(performGridActionAtIndex:withEvent:sender:)
+    func performGridAction(at index: UInt, with event: ECEvent?, sender: AnyObject?)
+
     @objc(cancelGridActionWithEvent:sender:)
     optional func cancelGridAction(with event: ECEvent?, sender: AnyObject?)
 }

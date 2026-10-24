@@ -289,3 +289,144 @@ final class EditingDelegate: NSObject, ECSBDataSource, ECSBDelegate {
         #expect(!itemLayer.disableLayout)
     }
 }
+
+/// An app whose bookmark resolution is recorded and finished by the test.
+final class ResolvingApp: LPApp, @unchecked Sendable {
+    var log: (String) -> Void = { _ in }
+    var resolve: ((URL?) -> Void)?
+
+    override func resolveURLFromBookMark(_ updateBookmark: Bool, url block: (@convention(block) (URL?) -> Void)?) {
+        log("resolve \(updateBookmark)")
+        resolve = block
+    }
+}
+
+/// A controller that records the zoom, the close and the open instead of making them.
+@MainActor
+final class RecordingLPSpringboard: LPSpringboard {
+    var log: [String] = []
+
+    override func setVisible(_ visible: Bool, reason: String?) {
+        log.append("visible \(visible) \(reason ?? "")")
+    }
+
+    override func performOpenAnimation(forRunnable runnable: LPRunnable?, withImage image: AnyObject?, atFrame: CGRect,
+                                       toFrame: CGRect) {
+        log.append("zoom \(atFrame) \(toFrame)")
+    }
+
+    override func handleRunnableOpen(_ runnable: LPRunnable?, atURL url: URL?, fromFrame: CGRect,
+                                     toFrame: UnsafeMutablePointer<CGRect>?) -> Bool {
+        log.append("open \(url?.path ?? "")")
+        return true
+    }
+}
+
+/// A grid data source that also takes the item actions.
+@MainActor
+final class ActingDataSource: NSObject, ECSBDataSource, ECSBActionHandling {
+    let scene: SceneDataSource
+    var actions: [(item: AnyObject?, sender: AnyObject?)] = []
+
+    init(scene: SceneDataSource) {
+        self.scene = scene
+    }
+
+    func value(forKey key: String, ofItem item: AnyObject?, withInfo info: AnyObject?) -> AnyObject? {
+        scene.value(forKey: key, ofItem: item, withInfo: info)
+    }
+
+    func performAction(forItem item: AnyObject?, with event: ECEvent?, sender: AnyObject?) {
+        actions.append((item, sender))
+    }
+}
+
+@MainActor
+@Suite(.serialized) struct LaunchPathTests {
+    @Test("grid action 把这一项的模型对象交给 handler；图标矩形是图标 layer 在根 layer 里的 frame")
+    func gridAction() throws {
+        let scene = SceneGrid()
+        let acting = ActingDataSource(scene: scene.source)
+        scene.grid.handler = acting
+        let item = try #require(scene.page.item.items?[3] as? ECSBItem)
+        scene.grid.performGridAction(at: 3, with: nil, sender: scene.page)
+        #expect(acting.actions.count == 1)
+        #expect(acting.actions.first?.item === item.clientItem)
+        #expect(acting.actions.first?.sender === scene.grid)
+        scene.grid.performGridAction(at: 1000, with: nil, sender: scene.page)
+        #expect(acting.actions.count == 1)
+        let image = scene.itemLayer(3).imageLayer
+        #expect(scene.grid.globalBoundsOfIcon(forItem: item.clientItem) == image.superlayer!.convert(image.frame, to: nil))
+        #expect(scene.grid.globalBoundsOfIcon(forItem: NSObject()) == .zero)
+    }
+
+    @Test("飞出：起始值、终止的变换和透明度、时长和曲线照 REF-LAUNCH-002；目标宽高为 0 时放大 2 倍")
+    func zoom() throws {
+        let springboard = RecordingSpringboard()
+        let root = springboard.containerWindow().layer
+        let image = SceneDataSource.image(96)
+        let start = CGRect(x: 363, y: 333, width: 104, height: 104)
+        springboard.performOpenAnimation(forRunnable: nil, withImage: image, atFrame: start,
+                                         toFrame: springboard.containerWindow().convertRectFromGlobal(.zero))
+        let layer = try #require(root.sublayers?.last)
+        #expect(layer.contents as AnyObject === image)
+        #expect(layer.bounds.size == start.size)
+        #expect(layer.position == CGPoint(x: start.midX, y: start.midY))
+        #expect(CATransform3DEqualToTransform(layer.transform, CATransform3DMakeScale(2, 2, 1)))
+        #expect(layer.opacity == 0.1)
+        let opacity = try #require(layer.animation(forKey: "opacity") as? CABasicAnimation)
+        #expect(opacity.fromValue as? Float == 0.9)
+        #expect(opacity.duration == 0.25)
+        #expect(opacity.timingFunction == CAMediaTimingFunction(name: .easeOut))
+        let transform = try #require(layer.animation(forKey: "transform") as? CABasicAnimation)
+        #expect(CATransform3DEqualToTransform((transform.fromValue as! NSValue).caTransform3DValue, CATransform3DIdentity))
+        #expect(layer.animation(forKey: "position") == nil)
+        layer.removeFromSuperlayer()
+    }
+
+    @Test("LPSpringboard：先飞出、关闭，再解析书签；找得到时打开，notFound 时不打开")
+    func launchOrder() async {
+        let springboard = RecordingLPSpringboard()
+        let app = ResolvingApp(forCopy: ())
+        app._icon = SceneDataSource.image(96)
+        app.log = { springboard.log.append($0) }
+        let rect = CGRect(x: 363, y: 333, width: 104, height: 104)
+        springboard._launchRunnable(app, withImageRect: rect, withEvent: nil)
+        let target = springboard.containerWindow().convertRectFromGlobal(.zero)
+        #expect(springboard.log == ["zoom \(rect) \(target)", "visible false launch runnable in LPSpringboard subclass", "resolve true"])
+        app.resolve?(URL(fileURLWithPath: "/System/Applications/Calculator.app"))
+        await drainMainQueue()
+        #expect(springboard.log.last == "open /System/Applications/Calculator.app")
+
+        springboard.log = []
+        app.notFound = true
+        springboard._launchRunnable(app, withImageRect: rect, withEvent: nil)
+        app.resolve?(URL(fileURLWithPath: "/System/Applications/Calculator.app"))
+        await drainMainQueue()
+        #expect(!springboard.log.contains { $0.hasPrefix("open") })
+    }
+
+    @Test("没有图标时不飞出，照常关闭和解析书签")
+    func launchWithoutIcon() {
+        let springboard = RecordingLPSpringboard()
+        let app = ResolvingApp(forCopy: ())
+        app.log = { springboard.log.append($0) }
+        springboard._launchRunnable(app, withImageRect: .zero, withEvent: nil)
+        #expect(springboard.log == ["visible false launch runnable in LPSpringboard subclass", "resolve true"])
+    }
+
+    @Test("打开应用的参数：标志和 disp 记录照 REF-LAUNCH-003")
+    func launchParametersMatch() throws {
+        let (flags, params) = launchParameters(dontSwitch: false, slow: false, display: 1)
+        #expect(flags == 0x45)
+        let record = try #require(params)
+        #expect(record.descriptorType == 0x7265_636F)  // 'reco'
+        #expect(record.numberOfItems == 1)
+        let disp = try #require(record.forKeyword(0x6469_7370))
+        #expect(disp.descriptorType == 0x6C6F_6E67)  // 'long'
+        #expect(disp.int32Value == 1)
+        #expect(launchParameters(dontSwitch: false, slow: true, display: 1).0 == 0x100_0045)
+        #expect(launchParameters(dontSwitch: true, slow: false, display: 1).0 == 0x245)
+        #expect(launchParameters(dontSwitch: false, slow: false, display: 0).1 == nil)
+    }
+}

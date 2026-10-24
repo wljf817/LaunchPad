@@ -35,6 +35,27 @@ final class ECSBSpringboard: NSObject, ECPagerSource, ECSBGridActionHandling, EC
         _pager.eventHandler = _eventHandler
     }
 
+    /// The grid action on the item at `index` of the sending page: the controller acts on the item's
+    /// model object (REF-LAUNCH-003). A folder's page as the sender comes with phase 5.
+    @objc(performGridActionAtIndex:withEvent:sender:)
+    func performGridAction(at index: UInt, with event: ECEvent?, sender: AnyObject?) {
+        var gridItem: ECSBItem?
+        if let page = sender as? ECSBPage, let items = page.item.items, index < items.count {
+            gridItem = items[Int(index)] as? ECSBItem
+        }
+        guard let gridItem else { return }
+        (handler as? ECSBActionHandling)?.performAction(forItem: gridItem.clientItem, with: event, sender: self)
+    }
+
+    /// The model object's icon layer's frame in the root layer's coordinates; zero when it has no
+    /// item layer (REF-LAUNCH-002).
+    @objc(globalBoundsOfIconForItem:)
+    func globalBoundsOfIcon(forItem clientItem: AnyObject?) -> CGRect {
+        guard let imageLayer = item(forClientItem: clientItem)?.itemLayer?.imageLayer,
+              let superlayer = imageLayer.superlayer else { return .zero }
+        return superlayer.convert(imageLayer.frame, to: nil)
+    }
+
     /// A click on the grid that was not on an item: passed on to the controller (REF-OVERLAY-010).
     @objc(cancelGridActionWithEvent:sender:)
     func cancelGridAction(with event: ECEvent?, sender: AnyObject?) {
