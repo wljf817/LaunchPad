@@ -80,6 +80,21 @@ final class SceneGrid {
     }
 }
 
+/// Records the grid actions it gets.
+@MainActor
+final class RecordingGridActions: NSObject, ECSBGridActionHandling {
+    var performed: [(index: UInt, sender: AnyObject?)] = []
+    var cancelled = 0
+
+    func performGridAction(at index: UInt, with event: ECEvent?, sender: AnyObject?) {
+        performed.append((index, sender))
+    }
+
+    func cancelGridAction(with event: ECEvent?, sender: AnyObject?) {
+        cancelled += 1
+    }
+}
+
 /// A grid data source that records the editing callbacks.
 @MainActor
 final class EditingDelegate: NSObject, ECSBDataSource, ECSBDelegate {
@@ -154,5 +169,55 @@ final class EditingDelegate: NSObject, ECSBDataSource, ECSBDelegate {
         held.disableLayout = false
         (scene.page.layer as! ECSBGridLayer)._layoutItemLayers()
         #expect(held.position == heldPosition)
+    }
+}
+
+@MainActor
+@Suite(.serialized) struct PressTests {
+    let scene = SceneGrid()
+    let actions = RecordingGridActions()
+    let handler: RecordingHandler
+
+    init() {
+        handler = RecordingHandler(layer: scene.top)
+        scene.grid.pager.gridActionHandler = actions
+        ECModalEventController.sharedController().addHandler(handler, externalEventSource: true, usingMouseHysteresis: true)
+    }
+
+    func done() {
+        ECModalEventController.sharedController().removeHandler(handler)
+    }
+
+    @Test("按下时拖动捕获记下序号、按下点和 item layer 在滚动 layer 里的 frame")
+    func dragCaptureRecordsPress() throws {
+        defer { done() }
+        let index = 3
+        let point = scene.icon(index)
+        scene.send(.leftMouseDown, point)
+        let capture = try #require(scene.grid.eventHandler.dragCapture)
+        let state = try #require(capture.beginningState)
+        #expect(state.itemIndex == UInt(index))
+        #expect(state.page === scene.page)
+        let scroll = scene.grid.pager.layer.scrollLayer
+        let itemLayer = scene.itemLayer(index)
+        let inWindow = scene.window.convertPointFromGlobal(point)
+        #expect(state.location == scroll.convert(inWindow, from: nil))
+        #expect(state.frame == scene.page.layer!.convert(itemLayer.frame, to: scroll))
+        #expect(!capture.dragging)
+        #expect(!capture.fromInLockedRange)
+        #expect(capture.mainPager === scene.grid.pager)
+        #expect(capture.modalEventHandler === handler)
+        scene.send(.leftMouseUp, point)
+    }
+
+    @Test("pager 的 currentPage 越界时为 nil")
+    func currentPage() {
+        defer { done() }
+        #expect(scene.grid.pager.currentPage === scene.page)
+        let pages = scene.grid.pager.pages
+        let saved = pages.copy() as! [AnyObject]
+        pages.removeAllObjects()
+        #expect(scene.grid.pager.currentPage == nil)
+        pages.addObjects(from: saved)
     }
 }

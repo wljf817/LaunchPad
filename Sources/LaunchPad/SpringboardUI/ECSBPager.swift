@@ -8,6 +8,7 @@ class ECSBPager: ECPager {
     @objc weak var handler: ECSBDataSource?
     /// Handles the actions on the grid: `ECSBSpringboard` (REF-OVERLAY-010).
     @objc weak var gridActionHandler: ECSBGridActionHandling?
+    var _selectedItem: ECSBItem?
     var scaleFactor: Float = 0
     var _editing = false
     var _visible = false
@@ -67,6 +68,22 @@ class ECSBPager: ECPager {
             } else {
                 delegate?.didEndEditing?()
             }
+        }
+    }
+
+    /// The page at the current page index, nil past the end (research paper §5.9).
+    @objc var currentPage: ECSBPage? {
+        let index = currentPageIndex
+        return index < UInt(_pages.count) ? _pages[Int(index)] as? ECSBPage : nil
+    }
+
+    /// The selected item. Setting the same item does nothing; changing the selection (the handler's
+    /// selection callbacks and the item layers' selected look) comes with phase 2 (research paper §5.9).
+    @objc var selectedItem: ECSBItem? {
+        get { _selectedItem }
+        set {
+            guard newValue !== _selectedItem else { return }
+            _selectedItem = newValue
         }
     }
 
