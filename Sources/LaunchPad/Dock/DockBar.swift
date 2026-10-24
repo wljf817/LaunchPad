@@ -46,22 +46,22 @@ final class DockBar: NSObject {
         }
         defer { mouseDownItem = nil }
         guard let pressed = mouseDownItem, let item, CFEqual(pressed, item) else { return }
+        let url = Self.attribute(item, "AXURL") as? URL
         if Self.isTile(role: Self.attribute(item, kAXRoleAttribute) as? String,
                        subrole: Self.attribute(item, kAXSubroleAttribute) as? String,
-                       url: Self.attribute(item, "AXURL") as? URL, ownURL: Self.launcherURL) {
+                       bundleIdentifier: url.flatMap { Bundle(url: $0)?.bundleIdentifier }) {
             springboard.setVisible(false, reason: "tile mouse up not in Docklet")
         }
     }
 
-    /// A Dock item that is a tile with an action, other than LaunchPad's own (the launcher toggles
-    /// LaunchPad itself).
-    static func isTile(role: String?, subrole: String?, url: URL?, ownURL: URL) -> Bool {
-        role == "AXDockItem" && subrole != "AXSeparatorDockItem" && url?.standardizedFileURL.path != ownURL.standardizedFileURL.path
+    /// A Dock item that is a tile with an action, other than a `LaunchPad.app`'s: every copy of the
+    /// launcher toggles LaunchPad itself.
+    static func isTile(role: String?, subrole: String?, bundleIdentifier: String?) -> Bool {
+        role == "AXDockItem" && subrole != "AXSeparatorDockItem" && bundleIdentifier != launcherBundleIdentifier
     }
 
-    /// `LaunchPad.app`: the background process is `LaunchPad.app/Contents/Helpers/LaunchPadAgent.app`.
-    static let launcherURL = Bundle.main.bundleURL.deletingLastPathComponent().deletingLastPathComponent()
-        .deletingLastPathComponent()
+    /// `LaunchPad.app`'s bundle identifier (scripts/build-app.sh).
+    static let launcherBundleIdentifier = "io.github.wljf817.LaunchPad.launcher"
 
     static func accessibilityElement(at location: CGPoint) -> AXUIElement? {
         var element: AXUIElement?

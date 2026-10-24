@@ -439,16 +439,15 @@ final class RecordingSpringboard: Springboard {
         launchpadSpringboard = springboard
     }
 
-    @Test("点 Dock：只有带动作的图标算，分隔线和 LaunchPad 自己的不算")
+    @Test("点 Dock：只有带动作的图标算，分隔线和任何一份 LaunchPad 的都不算")
     func tileKinds() {
-        let own = URL(fileURLWithPath: "/Applications/LaunchPad.app")
-        let reminders = URL(string: "file:///System/Applications/Reminders.app/")
-        #expect(DockBar.isTile(role: "AXDockItem", subrole: "AXApplicationDockItem", url: reminders, ownURL: own))
-        #expect(DockBar.isTile(role: "AXDockItem", subrole: "AXFolderDockItem", url: URL(string: "file:///Users/x/Downloads/"), ownURL: own))
-        #expect(DockBar.isTile(role: "AXDockItem", subrole: "AXTrashDockItem", url: nil, ownURL: own))
-        #expect(!DockBar.isTile(role: "AXDockItem", subrole: "AXSeparatorDockItem", url: nil, ownURL: own))
-        #expect(!DockBar.isTile(role: "AXDockItem", subrole: "AXApplicationDockItem", url: URL(string: "file:///Applications/LaunchPad.app/"), ownURL: own))
-        #expect(!DockBar.isTile(role: "AXWindow", subrole: nil, url: nil, ownURL: own))
+        #expect(DockBar.isTile(role: "AXDockItem", subrole: "AXApplicationDockItem", bundleIdentifier: "com.apple.reminders"))
+        #expect(DockBar.isTile(role: "AXDockItem", subrole: "AXFolderDockItem", bundleIdentifier: nil))
+        #expect(DockBar.isTile(role: "AXDockItem", subrole: "AXTrashDockItem", bundleIdentifier: nil))
+        #expect(!DockBar.isTile(role: "AXDockItem", subrole: "AXSeparatorDockItem", bundleIdentifier: nil))
+        #expect(!DockBar.isTile(role: "AXDockItem", subrole: "AXApplicationDockItem",
+                                bundleIdentifier: "io.github.wljf817.LaunchPad.launcher"))
+        #expect(!DockBar.isTile(role: "AXWindow", subrole: nil, bundleIdentifier: nil))
     }
 
     @Test("点 Dock：关着时什么也不做，也不记按下")
