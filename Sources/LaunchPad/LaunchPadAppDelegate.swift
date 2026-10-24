@@ -33,6 +33,10 @@ final class LaunchPadAppDelegate: NSObject, NSApplicationDelegate {
         launchpadSpringboard = springboard
         // As Dock: Mission Control's object exists from the start (REF-DEV-026).
         _ = wvExpose
+        // As Dock: the display reconfiguration callback is registered once the controller exists, and
+        // Dock counts as started right before the controller is activated (REF-OVERLAY-012).
+        registerDisplayReconfigurationCallback()
+        dockStarted = true
         springboard.activate()
         DispatchQueue.main.async {
             springboard.start()

@@ -7,6 +7,20 @@ import Testing
 // (REF-OVERLAY-011, REF-OVERLAY-012, REF-GRID-017, REF-DEV-029). The behaviour with a second
 // display is checked in the comparison VM.
 
+/// A controller that records the closes and the display changes instead of making them.
+@MainActor
+final class DisplayRecordingSpringboard: LPSpringboard {
+    var log: [String] = []
+
+    override func setVisible(_ visible: Bool, reason: String?) {
+        log.append("visible \(visible) \(reason ?? "")")
+    }
+
+    override func displayChanged() {
+        log.append("displayChanged")
+    }
+}
+
 /// A controller that records what `-displayChanged` has done when it lays out.
 @MainActor
 final class LayoutRecordingSpringboard: LPSpringboard {
@@ -15,6 +29,75 @@ final class LayoutRecordingSpringboard: LPSpringboard {
     override func layout() {
         layouts.append((springboard.visible, springboard.item.items as AnyObject?, springboard.zoomFactor))
         super.layout()
+    }
+}
+
+@MainActor
+@Suite(.serialized) struct DisplayReconfigurationTests {
+    let springboard = DisplayRecordingSpringboard()
+    let begin = CGDisplayChangeSummaryFlags.beginConfigurationFlag.rawValue
+
+    /// Runs `body` with this suite's controller as Launchpad's and Dock started, and puts the globals
+    /// back: other suites set `launchpadSpringboard` too, and a synchronous body cannot interleave
+    /// with them.
+    func withLaunchpad(_ body: () -> Void) {
+        let saved = (launchpadSpringboard, displayReconfigurationPending, dockStarted)
+        launchpadSpringboard = springboard
+        displayReconfigurationPending = false
+        dockStarted = true
+        defer { (launchpadSpringboard, displayReconfigurationPending, dockStarted) = saved }
+        body()
+    }
+
+    @Test("开始只记下待处理")
+    func beginOnly() {
+        withLaunchpad {
+            handleDisplayReconfiguration(display: 1, flags: begin)
+            handleDisplayReconfiguration(display: 2, flags: begin)
+            #expect(displayReconfigurationPending)
+            #expect(springboard.log.isEmpty)
+        }
+    }
+
+    @Test("第一次结果关闭一次，每次结果都重读显示器并发 displayChanged")
+    func results() {
+        withLaunchpad {
+            handleDisplayReconfiguration(display: 1, flags: begin)
+            handleDisplayReconfiguration(display: 2, flags: begin)
+            let marker = DisplayDescriptor(notchBounds: .null, identifier: 0xdead)
+            dockBar.display = marker
+            handleDisplayReconfiguration(display: 2, flags: 0x111a)
+            #expect(dockBar.display !== marker)
+            dockBar.display = marker
+            handleDisplayReconfiguration(display: 1, flags: 0x1000)
+            #expect(dockBar.display !== marker)
+            #expect(springboard.log == ["visible false display reconfig", "displayChanged", "displayChanged"])
+            #expect(!displayReconfigurationPending)
+        }
+    }
+
+    @Test("带 0x2000 位的结果不发 displayChanged")
+    func skippedBit() {
+        withLaunchpad {
+            handleDisplayReconfiguration(display: 1, flags: begin)
+            handleDisplayReconfiguration(display: 1, flags: 0x2000 | 0x1000)
+            #expect(springboard.log == ["visible false display reconfig"])
+        }
+    }
+
+    @Test("Dock 还没启动时只清掉待处理")
+    func beforeStart() {
+        withLaunchpad {
+            dockStarted = false
+            let marker = DisplayDescriptor(notchBounds: .null, identifier: 0xdead)
+            dockBar.display = marker
+            handleDisplayReconfiguration(display: 1, flags: begin)
+            handleDisplayReconfiguration(display: 1, flags: 0x1008)
+            #expect(springboard.log.isEmpty)
+            #expect(dockBar.display === marker)
+            #expect(!displayReconfigurationPending)
+            dockBar.updateDisplay(fromMainThread: true)
+        }
     }
 }
 

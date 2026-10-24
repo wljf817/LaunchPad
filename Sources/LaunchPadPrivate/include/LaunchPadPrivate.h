@@ -207,6 +207,16 @@ extern bool SLSGetSystemUIHasRTLDirectionLegacy(void);
 // first answer in the process and updates it only through the event loop.
 extern CGError SLSGetDockRectWithOrientation(CGSConnectionID cid, CGRect *rect, int32_t *reason, int32_t *orientation);
 
+// Display reconfiguration (multi-display, REF-OVERLAY-012). Dock registers its callback with this
+// call at startup; the callback gets the display, its UUID and the change flags, once per display
+// with the begin flag and once per display with the result. The public
+// CGDisplayRegisterReconfigurationCallback gives the same flags without the UUID. Exported by
+// CoreGraphics on macOS 15.6.1, 26.6.2 and 27.0.1; arguments checked at run time on 26.6.2.
+typedef void (*CGSDisplayReconfigurationWithUUIDCallBack)(CGDirectDisplayID display, CFUUIDRef _Nullable uuid,
+                                                          CGDisplayChangeSummaryFlags flags, void * _Nullable userInfo);
+extern CGError CGSDisplayRegisterReconfigurationCallbackWithUUID(CGSDisplayReconfigurationWithUUIDCallBack callback,
+                                                                 void * _Nullable userInfo);
+
 // ---------------------------------------------------------------------------
 // Icons (grid-items, REF-GRID-012). Verified on macOS 15.6.1 (24G90), 26.6.2
 // (25G83) and 27.0.1 (26A434): the symbols exist with these arguments and give
