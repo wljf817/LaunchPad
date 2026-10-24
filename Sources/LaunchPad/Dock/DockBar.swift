@@ -10,7 +10,9 @@ import LaunchPadPrivate
 @objc(DockBar)
 final class DockBar: NSObject {
     @objc let visibilityController: DockVisibility
-    /// The display the Dock is on: Launchpad's display (REF-ARCH-008). Other displays are 1.6.
+    /// The display the Dock is on: Launchpad's display (REF-OVERLAY-011). In the original the Dock keeps
+    /// it up to date itself; here it is read from the window server when `DockBar` is created, at every
+    /// open and after a display change (REF-DEV-029).
     @objc var display: DisplayDescriptor
     /// The Dock item under the last left press while Launchpad was visible (REF-DEV-024).
     var mouseDownItem: AXUIElement?
@@ -18,7 +20,9 @@ final class DockBar: NSObject {
 
     override init() {
         visibilityController = DockVisibility(spaces: spaces)
-        display = DisplayDescriptor.descriptor(for: CGMainDisplayID())
+        // Without a Dock window there is no earlier value: the Dock starts on the main
+        // display (REF-DEV-029).
+        display = DisplayDescriptor.descriptor(for: Self.dockDisplay() ?? CGMainDisplayID())
         super.init()
         // REF-DEV-024: the clicks on the Dock go to the Dock's window; the left button is watched
         // globally instead.
@@ -27,6 +31,47 @@ final class DockBar: NSObject {
             let location = event.cgEvent?.location ?? .zero
             MainActor.assumeIsolated { dockBar.tileMouse(down: down, at: location) }
         }
+    }
+
+    // MARK: - The Dock's display and position (REF-DEV-029)
+
+    /// Determines the Dock's display again, where the original's does after a display change
+    /// (REF-OVERLAY-012); the parameter says how the original then updates the Dock's own visibility,
+    /// which stays the Dock's. The display is read from the window server; while the Dock has no window
+    /// (for example while it restarts) the last one is kept.
+    @objc(updateDisplayFromMainThread:)
+    func updateDisplay(fromMainThread: Bool) {
+        guard let id = Self.dockDisplay() else { return }
+        display = DisplayDescriptor.descriptor(for: id)
+    }
+
+    /// The display under the Dock's window at the Dock window level, which covers the Dock's display.
+    /// The window is ordered out while the Dock hides (auto-hide, a full-screen app's space) and keeps
+    /// its frame, so windows off screen count too.
+    static func dockDisplay() -> CGDirectDisplayID? {
+        guard let pid = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.dock").first?.processIdentifier,
+              let windows = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String: Any]],
+              let frame = dockWindowFrame(in: windows, dockPID: pid) else { return nil }
+        var display: CGDirectDisplayID = 0
+        var count: UInt32 = 0
+        CGGetDisplaysWithPoint(CGPoint(x: frame.midX, y: frame.midY), 1, &display, &count)
+        return count == 1 ? display : nil
+    }
+
+    /// The frame (global coordinates) of the Dock process's window at the Dock window level in a
+    /// window list. While the Dock moves to another display it shows a clone at the same level for a
+    /// moment; the Dock's own window is the older one, with the lower window number.
+    static func dockWindowFrame(in windows: [[String: Any]], dockPID: pid_t) -> CGRect? {
+        let level = Int(CGWindowLevelForKey(.dockWindow))
+        let dockWindows = windows.filter {
+            ($0[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value == dockPID
+                && ($0[kCGWindowLayer as String] as? NSNumber)?.intValue == level
+        }
+        guard let window = dockWindows.min(by: {
+            ($0[kCGWindowNumber as String] as? NSNumber)?.intValue ?? .max
+                < ($1[kCGWindowNumber as String] as? NSNumber)?.intValue ?? .max
+        }), let bounds = window[kCGWindowBounds as String] as? NSDictionary else { return nil }
+        return CGRect(dictionaryRepresentation: bounds)
     }
 
     // MARK: - Clicks on tiles (REF-DEV-024)

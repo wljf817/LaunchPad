@@ -28,6 +28,9 @@ class LPSpringboard: Springboard {
         guard processUIModeManager.processSwitchEnabled,
               !dockGlobals.inAcceleratedTwoUp,
               !dockGlobals.reorderingTilesInFullscreen else { return }
+        // REF-DEV-029: the Dock may have moved to another display since the last open; the original's
+        // Dock bar changed its display itself then.
+        dockBar.updateDisplay(fromMainThread: true)
         containerWindow().setFrame(totalScreenBounds())
         orderWindowOn(true)
         let space = spaces.currentSpace(forDisplay: display())?.uuid

@@ -62,7 +62,8 @@ class Springboard: NSObject, ECModalEventHandler, ECEventHandlingDelegate, ECSBD
                                    m41: 0, m42: 0, m43: 0, m44: 1, m45: 0)
         matrix.setValue(NSValue(caColorMatrix: values), forKey: "inputColorMatrix")
         desktopFilters = [blur, saturate, matrix]
-        let display = CGMainDisplayID()
+        // `-display` and `-totalScreenBounds`, which need `self` (REF-OVERLAY-011).
+        let display = dockBar.display.identifier
         // REF-ARCH-008: tags 0x400 and level 20.
         window = WALayerKitWindow(frame: CGDisplayBounds(display), connection: dockGlobals.dockConnection,
                                   display: display, tags: 0x400, level: 20)
@@ -86,10 +87,9 @@ class Springboard: NSObject, ECModalEventHandler, ECEventHandlingDelegate, ECSBD
         }
     }
 
-    /// The display Launchpad is shown on: the Dock's in the original. Only one display is handled
-    /// in this sub-phase (multiple displays are 1.6).
+    /// The display Launchpad is shown on: the Dock's (REF-OVERLAY-011).
     @objc func display() -> UInt32 {
-        CGMainDisplayID()
+        dockBar.display.identifier
     }
 
     /// The bounds of `-display` in global coordinates (REF-ARCH-008).
