@@ -245,6 +245,57 @@ func notificationEvent(code: Int64) -> CGEvent {
         controller.removeHandler(first)
         #expect(controller.eventHandlers.count == 0)
     }
+
+    @Test("松开块在交出 leftMouseUp: 之后按登记顺序各执行一次，拿到这次松开的事件")
+    func mouseUpBlocks() {
+        let handler = RecordingHandler(layer: top)
+        controller.addHandler(handler, externalEventSource: true, usingMouseHysteresis: true)
+        var log: [String] = []
+        send(mouseEvent(.leftMouseDown, at: global(CGPoint(x: 50, y: 50))))
+        controller.addCompletionBlock { event in log.append("first \(event?.type ?? 0) \(child.calls.last ?? "")") }
+        controller.addCompletionBlock { _ in log.append("second") }
+        send(mouseEvent(.leftMouseUp, at: global(CGPoint(x: 50, y: 50))))
+        #expect(log == ["first 2 up", "second"])
+        let entry = controller.eventHandlers.lastObject as? ECModalEventControllerHandler
+        #expect(entry?.mouseUpCompletionBlocks == nil)
+        send(mouseEvent(.leftMouseDown, at: global(CGPoint(x: 50, y: 50))))
+        send(mouseEvent(.leftMouseUp, at: global(CGPoint(x: 50, y: 50))))
+        #expect(log.count == 2)
+        controller.removeHandler(handler)
+    }
+
+    @Test("按下的捕获不是左键时，松开不执行松开块")
+    func mouseUpBlocksOtherCapture() {
+        let handler = RecordingHandler(layer: top)
+        controller.addHandler(handler, externalEventSource: true, usingMouseHysteresis: true)
+        let entry = controller.eventHandlers.lastObject as! ECModalEventControllerHandler
+        entry.mouseDownCapture = ECModalEventCapture.modalEventCapture(handler: child, layer: child, eventType: 3)
+        var ran = false
+        controller.addCompletionBlock { _ in ran = true }
+        send(mouseEvent(.leftMouseUp, at: global(CGPoint(x: 50, y: 50))))
+        #expect(!ran)
+        entry.mouseDownCapture = nil
+        controller.removeHandler(handler)
+    }
+
+    @Test("卸下栈顶处理者、压上新处理者时，原栈顶的松开块以 nil 事件执行")
+    func mouseUpBlocksOnStackChanges() {
+        let first = RecordingHandler(layer: top)
+        let second = RecordingHandler(layer: top)
+        var events: [String] = []
+        controller.addHandler(first, externalEventSource: true, usingMouseHysteresis: true)
+        #expect(controller.currentHandler() === first)
+        controller.addCompletionBlock { event in events.append("first \(event == nil)") }
+        controller.addHandler(second, externalEventSource: true, usingMouseHysteresis: true)
+        #expect(controller.currentHandler() === second)
+        #expect(events == ["first true"])
+        controller.addCompletionBlock { event in events.append("second \(event == nil)") }
+        controller.removeHandler(second)
+        #expect(events == ["first true", "second true"])
+        #expect(controller.currentHandler() === first)
+        controller.removeHandler(first)
+        #expect(controller.currentHandler() == nil)
+    }
 }
 
 /// A controller that records the open and close requests instead of making them.

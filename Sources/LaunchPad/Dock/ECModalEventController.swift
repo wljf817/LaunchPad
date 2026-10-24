@@ -37,9 +37,9 @@ final class ECModalEventController: NSObject {
         CGSInputModifierKeyState(0, 1)
     }
 
-    /// Pushes `handler`. The previous top handler loses the key focus and its press. Launchpad passes
-    /// `externalEventSource` YES: the events come from the process's own event source, so no
-    /// connection is made here.
+    /// Pushes `handler`. The previous top handler loses the key focus, its release blocks run without an
+    /// event and it loses its press (REF-LAUNCH-004). Launchpad passes `externalEventSource` YES: the
+    /// events come from the process's own event source, so no connection is made here.
     @objc(addHandler:externalEventSource:usingMouseHysteresis:)
     func addHandler(_ handler: ECModalEventHandler, externalEventSource: Bool, usingMouseHysteresis: Bool) {
         let previous = eventHandlers.lastObject as? ECModalEventControllerHandler
@@ -49,10 +49,13 @@ final class ECModalEventController: NSObject {
         if previous.handler.responds(to: lostKeyFocus) {
             previous.handler.perform(lostKeyFocus, with: nil)
         }
+        previous.performMouseUpBlocks(with: nil)
         previous.mouseDownCapture = nil
         previous.mouseDownHitLayer = nil
     }
 
+    /// Pops `handler`; when it was on top, it loses its press and its release blocks run without an
+    /// event (REF-LAUNCH-004).
     @objc(removeHandler:)
     func removeHandler(_ handler: ECModalEventHandler) {
         for case let (index, entry as ECModalEventControllerHandler) in eventHandlers.enumerated() where entry.handler === handler {
@@ -60,9 +63,20 @@ final class ECModalEventController: NSObject {
             if eventHandlers.count == index {
                 entry.mouseDownCapture = nil
                 entry.mouseDownHitLayer = nil
+                entry.performMouseUpBlocks(with: nil)
             }
             return
         }
+    }
+
+    /// Registers `block` with the top handler, to run on the next release (REF-LAUNCH-004).
+    @objc(addCompletionBlockOnMouseUp:)
+    func addCompletionBlock(onMouseUp block: @escaping ECMouseUpBlock) {
+        (eventHandlers.lastObject as? ECModalEventControllerHandler)?.addCompletionBlock(onMouseUp: block)
+    }
+
+    @objc func currentHandler() -> ECModalEventHandler? {
+        (eventHandlers.lastObject as? ECModalEventControllerHandler)?.handler
     }
 
     /// Dispatches `event` to the top handler: `windows` and `topLayers` are the handler's windows and
@@ -111,6 +125,7 @@ final class ECModalEventController: NSObject {
                                     handler: handler)
                 entry.mouseDownCapture = nil
                 entry.mouseDownHitLayer = nil
+                entry.performMouseUpBlocks(with: ev)
                 ecEvent = ev
             }
         case 6:  // left button dragged
