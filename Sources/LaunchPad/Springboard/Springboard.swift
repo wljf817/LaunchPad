@@ -21,6 +21,8 @@ class Springboard: NSObject, ECModalEventHandler, ECEventHandlingDelegate, ECSBD
     var windowIsOrderedOn = false
     var desktopStale = false
     var desktopLastUUID: String?
+    /// The display of the last open; 0 until the first (REF-GRID-017).
+    var lastDisplay: UInt32 = 0
     var springboard: ECSBSpringboard!
     var iconSize: UInt = 0
     var miniIconSize: UInt = 0
@@ -706,7 +708,7 @@ class Springboard: NSObject, ECModalEventHandler, ECEventHandlingDelegate, ECSBD
         if visible {
             _deferLayout = false
             rootPage?.setShouldCacheIcons(true)  // REF-GRID-015
-            // The display check comes here too (1.6).
+            checkAndUpdateIfDisplayChanged()  // REF-GRID-017
             springboard.zoomFactor = getZoomFactorFromPrefs()  // REF-GRID-005
             springboard.reloadItemContents(false)  // REF-GRID-014
             layout()
@@ -718,6 +720,30 @@ class Springboard: NSObject, ECModalEventHandler, ECEventHandlingDelegate, ECSBD
             purgeItemContentsLater()  // REF-GRID-015
         }
         springboard.setVisible(_visible)  // REF-GRID-015
+    }
+
+    /// At open: when Launchpad's display is not the one of the last open, the window takes the new
+    /// display's color space and the pages are rebuilt; the first open only notes the display
+    /// (REF-GRID-017).
+    @objc func checkAndUpdateIfDisplayChanged() {
+        let display = display()
+        if lastDisplay != 0 {
+            guard display != lastDisplay else { return }
+            containerWindow().setColorSpace(CGDisplayCopyColorSpace(display))
+            springboard.invalidate()
+        }
+        lastDisplay = display
+    }
+
+    /// The display configuration changed or the Dock moved (REF-GRID-017): rebuilds the pages and lays
+    /// them out again for the Dock's display.
+    @objc func displayChanged() {
+        if springboard.visible {
+            springboard.setVisible(false)
+        }
+        springboard.invalidate()
+        springboard.zoomFactor = getZoomFactorFromPrefs()  // REF-GRID-005
+        layout()
     }
 
     /// Purges the main grid's icon contents and lets the items drop their own icons 5 s after a close,

@@ -7,6 +7,17 @@ import Testing
 // (REF-OVERLAY-011, REF-OVERLAY-012, REF-GRID-017, REF-DEV-029). The behaviour with a second
 // display is checked in the comparison VM.
 
+/// A controller that records what `-displayChanged` has done when it lays out.
+@MainActor
+final class LayoutRecordingSpringboard: LPSpringboard {
+    var layouts: [(gridVisible: Bool, pages: AnyObject?, zoomFactor: CGFloat)] = []
+
+    override func layout() {
+        layouts.append((springboard.visible, springboard.item.items as AnyObject?, springboard.zoomFactor))
+        super.layout()
+    }
+}
+
 @MainActor
 @Suite(.serialized) struct LaunchpadDisplayTests {
     @Test("Dock 窗口所在的显示器，克隆窗口不算")
@@ -36,5 +47,43 @@ import Testing
         dockBar.display = DisplayDescriptor(notchBounds: .null, identifier: 42)
         #expect(springboard.display() == 42)
         #expect(springboard.totalScreenBounds() == CGDisplayBounds(42))
+    }
+
+    @Test("打开时比较显示器：第一次只记下，变了才换色彩空间、重新建页")
+    func checkAndUpdate() {
+        let springboard = LayoutRecordingSpringboard()
+        let saved = dockBar.display
+        defer { dockBar.display = saved }
+        let main = CGMainDisplayID()
+        dockBar.display = DisplayDescriptor(notchBounds: .null, identifier: main)
+        let pages = springboard.springboard.item.items as AnyObject?
+        springboard.checkAndUpdateIfDisplayChanged()
+        #expect(springboard.lastDisplay == main)
+        #expect(springboard.springboard.item.items as AnyObject? === pages)
+        springboard.checkAndUpdateIfDisplayChanged()
+        #expect(springboard.springboard.item.items as AnyObject? === pages)
+
+        springboard.lastDisplay = main &+ 1
+        springboard.checkAndUpdateIfDisplayChanged()
+        #expect(springboard.lastDisplay == main)
+        #expect(springboard.springboard.item.items as AnyObject? !== pages)
+        let expected = NSColorSpace(cgColorSpace: CGDisplayCopyColorSpace(main))
+        #expect(springboard.containerWindow().mainWindow?.colorSpace == expected)
+        #expect(springboard.containerWindow().stripWindow?.colorSpace == expected)
+    }
+
+    @Test("displayChanged：先藏起网格，再重新建页、取缩放系数、布局，不改 _lastDisplay")
+    func displayChanged() {
+        let springboard = LayoutRecordingSpringboard()
+        springboard.lastDisplay = 7
+        springboard.springboard.setVisible(true)
+        let pages = springboard.springboard.item.items as AnyObject?
+        springboard.springboard.zoomFactor = 0.5
+        springboard.displayChanged()
+        let layout = springboard.layouts.last
+        #expect(layout?.gridVisible == false)
+        #expect(layout?.pages !== pages)
+        #expect(layout?.zoomFactor == springboard.getZoomFactorFromPrefs())
+        #expect(springboard.lastDisplay == 7)
     }
 }

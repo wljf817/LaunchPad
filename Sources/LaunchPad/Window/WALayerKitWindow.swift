@@ -62,6 +62,15 @@ final class WALayerKitWindow: WAWindow {
         copyNeedsSync()
     }
 
+    /// Gives both windows `colorSpace`, as the original gives its window-server window when Launchpad's
+    /// display changed (REF-GRID-017).
+    @objc(setColorSpace:)
+    func setColorSpace(_ colorSpace: CGColorSpace) {
+        let space = NSColorSpace(cgColorSpace: colorSpace)
+        mainWindow?.colorSpace = space
+        stripWindow?.colorSpace = space
+    }
+
     /// A rectangle in global coordinates (origin at the top left) in the window's coordinates (origin
     /// at the bottom left), as the original converts it (research paper §3.1).
     @objc(convertRectFromGlobal:)
