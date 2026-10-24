@@ -66,4 +66,13 @@ class ECGridLayer: CALayer {
 
     /// Every grid layer of Launchpad is an `ECSBGridLayer`, which makes its item layers here.
     @objc func _layoutItemLayers() {}
+
+    /// The index of `itemLayer`'s item: its position among the item layers plus the start of the item
+    /// range; `NSNotFound` when it is not one of them (research paper §5.9).
+    @objc(itemIndexForLayer:)
+    func itemIndex(for itemLayer: CALayer?) -> UInt {
+        guard let itemLayer else { return UInt(NSNotFound) }
+        let position = _itemLayers.indexOfObjectIdentical(to: itemLayer)
+        return position == NSNotFound ? UInt(NSNotFound) : UInt(itemRange.location + position)
+    }
 }

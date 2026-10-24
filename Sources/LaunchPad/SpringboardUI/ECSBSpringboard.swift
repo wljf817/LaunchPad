@@ -13,6 +13,8 @@ final class ECSBSpringboard: NSObject, ECPagerSource, ECSBGridActionHandling, EC
     var numberOfRowsPerPage: UInt
     var numberOfColumnsPerPage: UInt
     var _pager: ECSBPager!
+    /// Handles the presses, drags and releases on the items of every pager (research paper §5.9).
+    var _eventHandler: ECSBEventHandler!
     var scaleFactor: Float
     var layoutRTL: Bool
     var _visible = false
@@ -26,9 +28,11 @@ final class ECSBSpringboard: NSObject, ECPagerSource, ECSBGridActionHandling, EC
         self.numberOfRowsPerPage = numberOfRowsPerPage
         self.numberOfColumnsPerPage = numberOfColumnsPerPage
         super.init()
+        _eventHandler = ECSBEventHandler(springboard: self)
         _pager = ECSBPager(pagerSource: self, scaleFactor: scaleFactor, layoutRTL: layoutRTL)
         _pager.gridActionHandler = self
         _pager.handler = handler
+        _pager.eventHandler = _eventHandler
     }
 
     /// A click on the grid that was not on an item: passed on to the controller (REF-OVERLAY-010).
@@ -42,6 +46,10 @@ final class ECSBSpringboard: NSObject, ECPagerSource, ECSBGridActionHandling, EC
 
     @objc var pager: ECSBPager {
         _pager
+    }
+
+    @objc var eventHandler: ECSBEventHandler {
+        _eventHandler
     }
 
     @objc var editing: Bool {

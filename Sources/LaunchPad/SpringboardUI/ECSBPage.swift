@@ -4,7 +4,7 @@ import QuartzCore
 /// item give the grid layer's item count and item layers (research paper §6.2).
 @MainActor
 @objc(ECSBPage)
-class ECSBPage: ECPage, ECLayerSource, ECSBGridDataSource {
+class ECSBPage: ECPage, ECLayerSource, ECEventHandlingDelegate, ECSBGridDataSource {
     @objc var handler: ECSBDataSource?
     @objc var item: ECSBPageItem
     var scaleFactor: Float
@@ -81,5 +81,24 @@ class ECSBPage: ECPage, ECLayerSource, ECSBGridDataSource {
     /// Drops its item layers' icons (REF-GRID-015).
     @objc func purgeItemContents() {
         (layer as? ECSBGridLayer)?.purgeItemContents()
+    }
+
+    // MARK: - ECEventHandlingDelegate
+
+    // The item layers' events go to the pager's event handler (research paper §5.9).
+
+    @objc(leftMouseDown:in:)
+    func leftMouseDown(_ event: ECEvent, in layer: CALayer?) -> Bool {
+        (pager as? ECSBPager)?.eventHandler?.leftMouseDown(event, inLayer: layer, ofPage: self) ?? false
+    }
+
+    @objc(leftMouseDragged:in:)
+    func leftMouseDragged(_ event: ECEvent, in layer: CALayer?) -> Bool {
+        (pager as? ECSBPager)?.eventHandler?.leftMouseDragged(event, inLayer: layer, ofPage: self) ?? false
+    }
+
+    @objc(leftMouseUp:in:)
+    func leftMouseUp(_ event: ECEvent, in layer: CALayer?) -> Bool {
+        (pager as? ECSBPager)?.eventHandler?.leftMouseUp(event, inLayer: layer, ofPage: self) ?? false
     }
 }

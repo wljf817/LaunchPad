@@ -220,4 +220,72 @@ final class EditingDelegate: NSObject, ECSBDataSource, ECSBDelegate {
         #expect(scene.grid.pager.currentPage == nil)
         pages.addObjects(from: saved)
     }
+
+    @Test("在图标上单击：按下时变暗、pager 编辑，松开时恢复并交给 grid action handler")
+    func clickIcon() {
+        defer { done() }
+        let index = 3
+        let itemLayer = scene.itemLayer(index)
+        scene.send(.leftMouseDown, scene.icon(index))
+        #expect(itemLayer.darkened)
+        #expect(itemLayer.disableLayout)
+        #expect(scene.grid.pager.editing)
+        #expect(actions.performed.isEmpty)
+        scene.send(.leftMouseUp, scene.icon(index))
+        #expect(!itemLayer.darkened)
+        #expect(!itemLayer.disableLayout)
+        #expect(actions.performed.count == 1)
+        #expect(actions.performed.first?.index == UInt(index))
+        #expect(actions.performed.first?.sender === scene.page)
+        #expect(actions.cancelled == 0)
+        #expect(scene.grid.eventHandler.dragCapture == nil)
+    }
+
+    @Test("点名称：不变暗，不交给 grid action，像点空白处一样取消")
+    func clickName() {
+        defer { done() }
+        let itemLayer = scene.itemLayer(3)
+        scene.send(.leftMouseDown, scene.name(3))
+        #expect(!itemLayer.darkened)
+        scene.send(.leftMouseUp, scene.name(3))
+        #expect(actions.performed.isEmpty)
+        #expect(actions.cancelled == 1)
+    }
+
+    @Test("在图标上按下后移动达到阈值再松开：不交给 grid action，不取消，图标恢复")
+    func dragOnIcon() {
+        defer { done() }
+        let itemLayer = scene.itemLayer(3)
+        let start = scene.icon(3)
+        scene.send(.leftMouseDown, start)
+        for dx in stride(from: 2.0, through: 20, by: 2) {
+            scene.send(.leftMouseDragged, CGPoint(x: start.x + dx, y: start.y))
+        }
+        #expect(itemLayer.darkened)
+        scene.send(.leftMouseUp, CGPoint(x: start.x + 20, y: start.y))
+        #expect(actions.performed.isEmpty)
+        #expect(actions.cancelled == 0)
+        #expect(!itemLayer.darkened)
+        #expect(!itemLayer.disableLayout)
+    }
+
+    @Test("在图标下边缘按下、移动不到阈值、松在名称上：取消，图标恢复")
+    func slideOntoName() {
+        defer { done() }
+        let index = 3
+        let itemLayer = scene.itemLayer(index)
+        let image = itemLayer.imageLayer
+        // 1 point above the icon's lower edge, then 2 points down onto the name (REF-LAUNCH-004).
+        let start = scene.global(CGPoint(x: image.bounds.midX, y: image.bounds.minY + 1.5), in: image)
+        scene.send(.leftMouseDown, start)
+        #expect(itemLayer.darkened)
+        scene.send(.leftMouseDragged, CGPoint(x: start.x, y: start.y + 1))
+        scene.send(.leftMouseDragged, CGPoint(x: start.x, y: start.y + 2))
+        #expect(itemLayer.darkened)
+        scene.send(.leftMouseUp, CGPoint(x: start.x, y: start.y + 2))
+        #expect(actions.performed.isEmpty)
+        #expect(actions.cancelled == 1)
+        #expect(!itemLayer.darkened)
+        #expect(!itemLayer.disableLayout)
+    }
 }

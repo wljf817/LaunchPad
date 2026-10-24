@@ -102,8 +102,8 @@ protocol ECEventHandling: NSObjectProtocol {
 }
 
 /// What handles a layer's events as the layer's `eventDelegate`: the same methods with the layer as
-/// the second argument; all optional (REF-ARCH-006, REF-OVERLAY-009). None of them is implemented
-/// yet.
+/// the second argument; all optional (REF-ARCH-006, REF-OVERLAY-009). The dispatcher asks each
+/// implementer with `respondsToSelector:`, so they are not declared here.
 @MainActor
 @objc(ECEventHandlingDelegate)
 protocol ECEventHandlingDelegate: NSObjectProtocol {}

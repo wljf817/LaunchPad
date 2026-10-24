@@ -8,6 +8,8 @@ class ECSBPager: ECPager {
     @objc weak var handler: ECSBDataSource?
     /// Handles the actions on the grid: `ECSBSpringboard` (REF-OVERLAY-010).
     @objc weak var gridActionHandler: ECSBGridActionHandling?
+    /// `ECSBSpringboard`'s, which holds it (research paper §5.9).
+    @objc weak var eventHandler: ECSBEventHandler?
     var _selectedItem: ECSBItem?
     var scaleFactor: Float = 0
     var _editing = false
