@@ -207,6 +207,15 @@ extern bool SLSGetSystemUIHasRTLDirectionLegacy(void);
 // first answer in the process and updates it only through the event loop.
 extern CGError SLSGetDockRectWithOrientation(CGSConnectionID cid, CGRect *rect, int32_t *reason, int32_t *orientation);
 
+// A notification on the process's window-server connection. Type 0x4b1: the Dock's rectangle changed;
+// it comes once the window server has the new rectangle and position, which its data also carries
+// (rectangle as four floats, reason, position). HIServices registers the same type for its Dock
+// cache. Delivered through the application's event loop. Checked on macOS 26.6.2 (REF-DEV-029).
+typedef void (*CGSConnectionNotifyProc)(uint32_t type, void * _Nullable data, uint32_t length,
+                                        void * _Nullable userInfo, CGSConnectionID cid);
+extern CGError CGSRegisterConnectionNotifyProc(CGSConnectionID cid, CGSConnectionNotifyProc proc, uint32_t type,
+                                               void * _Nullable userInfo);
+
 // Display reconfiguration (multi-display, REF-OVERLAY-012). Dock registers its callback with this
 // call at startup; the callback gets the display, its UUID and the change flags, once per display
 // with the begin flag and once per display with the result. The public

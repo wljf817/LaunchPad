@@ -99,6 +99,20 @@ final class LayoutRecordingSpringboard: LPSpringboard {
             dockBar.updateDisplay(fromMainThread: true)
         }
     }
+
+    @Test("Dock 改位置：方向变了才发 displayChanged")
+    func dockPosition() {
+        withLaunchpad {
+            dockBar.observedBarOrientation = dockBar.barOrientation
+            dockBar.dockRectangleChanged()
+            #expect(springboard.log.isEmpty)
+            let current = dockBar.barOrientation
+            dockBar.observedBarOrientation = current == 0 ? 1 : 0
+            dockBar.dockRectangleChanged()
+            #expect(springboard.log == ["displayChanged"])
+            #expect(dockBar.observedBarOrientation == current)
+        }
+    }
 }
 
 @MainActor

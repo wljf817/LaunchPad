@@ -14,6 +14,8 @@ final class DockBar: NSObject {
     /// it up to date itself; here it is read from the window server when `DockBar` is created, at every
     /// open and after a display change (REF-DEV-029).
     @objc var display: DisplayDescriptor
+    /// The Dock's position when its preferences last changed (REF-DEV-029).
+    var observedBarOrientation = 0
     /// The Dock item under the last left press while Launchpad was visible (REF-DEV-024).
     var mouseDownItem: AXUIElement?
     var mouseMonitor: Any?
@@ -24,6 +26,10 @@ final class DockBar: NSObject {
         // display (REF-DEV-029).
         display = DisplayDescriptor.descriptor(for: Self.dockDisplay() ?? CGMainDisplayID())
         super.init()
+        observedBarOrientation = barOrientation
+        // REF-DEV-029: the window server tells every connection that asks when the Dock's rectangle
+        // changed, after it has the new rectangle and position.
+        CGSRegisterConnectionNotifyProc(CGSMainConnectionID(), dockRectangleNotification, 0x4b1, nil)
         // REF-DEV-024: the clicks on the Dock go to the Dock's window; the left button is watched
         // globally instead.
         mouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp]) { event in
@@ -43,6 +49,16 @@ final class DockBar: NSObject {
     func updateDisplay(fromMainThread: Bool) {
         guard let id = Self.dockDisplay() else { return }
         display = DisplayDescriptor.descriptor(for: id)
+    }
+
+    /// After the Dock changes its position the original's Dock tells Launchpad, which lays out again
+    /// (REF-GRID-017). Here a change of the Dock's rectangle that comes with a new position stands for
+    /// it.
+    func dockRectangleChanged() {
+        let orientation = barOrientation
+        guard orientation != observedBarOrientation else { return }
+        observedBarOrientation = orientation
+        launchpadSpringboard?.displayChanged()
     }
 
     /// The display under the Dock's window at the Dock window level, which covers the Dock's display.
@@ -197,3 +213,11 @@ final class DockBar: NSObject {
 }
 
 @MainActor let dockBar = DockBar()
+
+/// The window server's notification that the Dock's rectangle changed (REF-DEV-029).
+private func dockRectangleNotification(_ type: UInt32, _ data: UnsafeMutableRawPointer?, _ length: UInt32,
+                                       _ userInfo: UnsafeMutableRawPointer?, _ connection: CGSConnectionID) {
+    DispatchQueue.main.async {
+        MainActor.assumeIsolated { dockBar.dockRectangleChanged() }
+    }
+}
