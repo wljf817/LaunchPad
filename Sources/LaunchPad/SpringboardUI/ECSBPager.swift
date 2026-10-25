@@ -29,6 +29,12 @@ class ECSBPager: ECPager {
         ECSBLayer.self
     }
 
+    /// Whether the scroll wheel and gestures may scroll the pages: not while an item is dragged
+    /// (REF-PAGING-006). The folder conditions are phase 5.
+    @objc func canScroll() -> Bool {
+        eventHandler?.dragCapture == nil
+    }
+
     /// Reloads the item contents of every page, or of every page but the current one
     /// (REF-GRID-014). An open folder's pages are not among them.
     @objc(reloadItemContents:)

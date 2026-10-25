@@ -205,4 +205,76 @@ class ECSBLayer: ECPagerLayer, ECEventHandlingDelegate {
         mouseDragged = false
         return handled
     }
+
+    // MARK: - Scroll wheel and gestures (REF-PAGING-006)
+
+    /// The pages follow the scroll wheel: the larger of its two deltas, doubled and negated when the
+    /// scrolling is reversed, adds up from the scroll value of the first event. Outside a scroll gesture
+    /// a timer then picks the page once the wheel stops; inside one the gesture's end does. Momentum
+    /// events do nothing.
+    @objc(scrollWheel:)
+    func scrollWheel(_ event: ECEvent) -> Bool {
+        let dx = event.deltaX
+        let dy = event.deltaY
+        let delta = abs(dx) > abs(dy) ? 2 * dx : 2 * dy  // REF-PAGING-006
+        guard !event.isMomentum else { return true }
+        let other = abs(dx) > abs(dy) ? 2 * dy : 2 * dx
+        guard delta != 0 || other != 0, (pager as? ECSBPager)?.canScroll() == true else { return true }
+        let layoutRTL = layoutRTL
+        func follow() {
+            let disabled = disableActions()
+            cummulativeDelta += springboardReverseScrollGesture ? -delta : delta
+            scrollValue = startScrollValue + cummulativeDelta
+            if disabled {
+                CATransaction.setDisableActions(false)
+            }
+        }
+        guard !isGestureScrolling else {
+            follow()
+            return true
+        }
+        if scrollWheelTimer == nil {
+            startScrollValue = scrollValue
+            startLocation = event.location
+            lastLocation = startLocation
+            lastTime = event.time
+            cummulativeDelta = 0
+        }
+        follow()
+        scrollWheelTimer?.cancel()
+        scrollWheelTimer = nil
+        let shift = ECModalEventController.shiftKeyDown()
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        // Picks the page: back to the first past its left edge; none at 0; otherwise the next page
+        // when the scroll value is past the start, else the previous one, with the end of a drag's
+        // unsigned arithmetic (REF-PAGING-005). No speed threshold.
+        timer.setEventHandler {
+            MainActor.assumeIsolated {
+                self.scrollWheelTimer?.cancel()
+                self.scrollWheelTimer = nil
+                let value = self.scrollValue
+                let count = UInt(self.pager?.pages.count ?? 0)
+                let index: UInt
+                if value < 0 {
+                    index = layoutRTL ? count &- 1 : 0
+                } else {
+                    guard value > 0, count > 0 else { return }
+                    let current = self.currentPageIndex
+                    if layoutRTL {
+                        let next = value > self.startScrollValue ? current &- 1 : current &+ 1
+                        index = Int(bitPattern: next) < 0 ? 0 : next
+                    } else {
+                        index = min(value <= self.startScrollValue ? current &- 1 : current &+ 1, count - 1)
+                    }
+                }
+                self.setCurrentPageIndex(index)
+            }
+        }
+        // REF-PAGING-006: longer while Shift is down; fires once.
+        timer.schedule(deadline: .now() + .nanoseconds(shift ? 375_000_000 : 75_000_000), repeating: .never,
+                       leeway: .nanoseconds(0))
+        timer.resume()
+        scrollWheelTimer = timer
+        return true
+    }
 }

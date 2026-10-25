@@ -794,6 +794,35 @@ struct PagingTests {
 
     // MARK: - Scroll wheel and gestures (REF-PAGING-006)
 
+    /// A main grid of three pages that records the page changes, on `page`.
+    func makeRecordedGrid(page: UInt = 0, rtl: Bool = false) -> (ECSBSpringboard, PageChangeRecorder) {
+        let recorder = PageChangeRecorder(count: 3)
+        let (grid, _) = makeGrid(pages: 3, rtl: rtl, source: recorder)
+        recorder.grid = grid
+        if page != 0 {
+            grid.currentPageIndex = page
+            grid.layer.scrollLayer.removeAllAnimations()
+            recorder.log.removeAll()
+        }
+        return (grid, recorder)
+    }
+
+    /// Sends the main grid's pager layer a scroll wheel event with the fixed-point deltas given and
+    /// flushes the transaction, as the dispatcher does (REF-OVERLAY-009). With the reversed scrolling
+    /// of the default preference, a negative delta moves toward the next page (REF-PAGING-006).
+    @discardableResult
+    func wheel(_ grid: ECSBSpringboard, dx: Double = 0, dy: Double = 0, momentum: Int64 = 0) -> Bool {
+        let handled = grid.layer.scrollWheel(ECEvent(event: scrollEvent(dx: dx, dy: dy, momentum: momentum, at: CGPoint(x: 1000, y: 60)),
+                                                     hitLayer: nil, hitWindow: nil, session: nil))
+        CATransaction.flush()
+        return handled
+    }
+
+    /// Lets the scroll wheel's timer fire on the main queue (REF-PAGING-006).
+    func waitForWheelTimer() async {
+        try? await Task.sleep(for: .milliseconds(200))
+    }
+
     @Test("反转偏好的读法：没设、不是数时为真，设为假时为假；默认的进程里为真")
     func reversePreference() {
         let key = "test-springboard-reverse-scroll-gesture"
@@ -807,6 +836,134 @@ struct PagingTests {
         UserDefaults.standard.set(1, forKey: key)
         #expect(boolPreference(key, default: false))
         #expect(springboardReverseScrollGesture)
+    }
+
+    @Test("滚一格：页按系数移一点、没有动画，当前页和圆点不变；到时滑到第二页，先后收到 will 和 did")
+    func wheelOneLine() async {
+        let window = makeWindow()
+        let (grid, recorder) = makeRecordedGrid()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        window.layer.addSublayer(grid.layer)
+        CATransaction.commit()
+        defer { grid.layer.removeFromSuperlayer() }
+        #expect(wheel(grid, dy: -1))
+        #expect(grid.layer.scrollValue == 2)
+        #expect(grid.layer.scrollLayer.animationKeys() == nil)
+        #expect(!CATransaction.disableActions())
+        #expect(grid.currentPageIndex == 0)
+        #expect(dots(grid).map(\.state) == [1, 0, 0])
+        #expect(recorder.log.isEmpty)
+        #expect(grid.layer.scrollWheelTimer != nil)
+        await waitForWheelTimer()
+        #expect(grid.currentPageIndex == 1)
+        #expect(recorder.log == ["handler will page 1, at 2", "handler did page 1, at 1536"])
+        #expect(grid.layer.scrollWheelTimer == nil)
+    }
+
+    @Test("调用前关着隐式动画时，滚动以后仍关着")
+    func wheelKeepsDisabledActions() async {
+        let (grid, _) = makeRecordedGrid()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        _ = grid.layer.scrollWheel(ECEvent(event: scrollEvent(dy: -1), hitLayer: nil, hitWindow: nil, session: nil))
+        #expect(CATransaction.disableActions())
+        CATransaction.commit()
+        await waitForWheelTimer()
+    }
+
+    @Test("连续滚十格：页跟着移、当前页不变，停下到时只换到第二页")
+    func wheelManyLines() async {
+        let (grid, recorder) = makeRecordedGrid()
+        for _ in 0..<10 {
+            wheel(grid, dy: -1)
+        }
+        #expect(grid.layer.scrollValue == 20)
+        #expect(grid.currentPageIndex == 0)
+        await waitForWheelTimer()
+        #expect(grid.currentPageIndex == 1)
+        #expect(recorder.log == ["handler will page 1, at 20", "handler did page 1, at 1536"])
+    }
+
+    @Test("取绝对值大的增量，相等时取纵向；横向滚动也翻页")
+    func wheelLargerDelta() async {
+        let (grid, recorder) = makeRecordedGrid()
+        wheel(grid, dx: -3, dy: 1)
+        #expect(grid.layer.scrollValue == 6)
+        wheel(grid, dx: 1, dy: -1)
+        #expect(grid.layer.scrollValue == 8)
+        wheel(grid, dx: -1)
+        #expect(grid.layer.scrollValue == 10)
+        await waitForWheelTimer()
+        #expect(grid.currentPageIndex == 1)
+        #expect(recorder.log.count == 2)
+    }
+
+    @Test("动量事件和两个增量都为 0 的事件什么都不做：不记起点、不起计时器")
+    func wheelIgnored() async {
+        let (grid, recorder) = makeRecordedGrid()
+        grid.layer.lastTime = 7
+        #expect(wheel(grid, dy: -1, momentum: 2))
+        #expect(wheel(grid))
+        #expect(grid.layer.scrollValue == 0)
+        #expect(grid.layer.lastTime == 7)
+        #expect(grid.layer.scrollWheelTimer == nil)
+        await waitForWheelTimer()
+        #expect(grid.currentPageIndex == 0)
+        #expect(recorder.log.isEmpty)
+    }
+
+    @Test("在第一页往回滚：超过的部分只走四分之一，到时用翻页动画滑回第一页，没有回调")
+    func wheelPastFirstPage() async throws {
+        let window = makeWindow()
+        let (grid, recorder) = makeRecordedGrid()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        window.layer.addSublayer(grid.layer)
+        CATransaction.commit()
+        defer { grid.layer.removeFromSuperlayer() }
+        wheel(grid, dy: 50)
+        #expect(grid.layer.scrollValue == -25)
+        await waitForWheelTimer()
+        #expect(grid.currentPageIndex == 0)
+        #expect(grid.layer.scrollValue == 0)
+        #expect(recorder.log.isEmpty)
+        let animation = try #require(grid.layer.scrollLayer.animation(forKey: "bounds") as? CABasicAnimation)
+        #expect((animation.fromValue as? NSValue)?.rectValue.minX == -25)
+    }
+
+    @Test("停在 0：不选页，显示第一页的位置，当前页和圆点仍是第二页")
+    func wheelStopsAtZero() async {
+        let (grid, recorder) = makeRecordedGrid(page: 1)
+        wheel(grid, dy: 768)
+        #expect(grid.layer.scrollValue == 0)
+        await waitForWheelTimer()
+        #expect(grid.currentPageIndex == 1)
+        #expect(grid.layer.scrollValue == 0)
+        #expect(dots(grid).map(\.state) == [0, 1, 0])
+        #expect(recorder.log.isEmpty)
+    }
+
+    @Test("回到原位：滚动值等于开始时的值，到时退到上一页")
+    func wheelBackToStart() async {
+        let (grid, recorder) = makeRecordedGrid(page: 1)
+        wheel(grid, dy: -10)
+        wheel(grid, dy: 10)
+        #expect(grid.layer.scrollValue == 1536)
+        await waitForWheelTimer()
+        #expect(grid.currentPageIndex == 0)
+        #expect(recorder.log == ["handler will page 0, at 1536", "handler did page 0, at 0"])
+    }
+
+    @Test("从右到左：滚动位置向左移动，到时滑到第二页")
+    func wheelRightToLeft() async {
+        let (grid, recorder) = makeRecordedGrid(rtl: true)
+        #expect(grid.layer.scrollValue == 3072)
+        wheel(grid, dy: 1)
+        #expect(grid.layer.scrollValue == 3070)
+        await waitForWheelTimer()
+        #expect(grid.currentPageIndex == 1)
+        #expect(recorder.log == ["handler will page 1, at 3070", "handler did page 1, at 1536"])
     }}
 
 /// A data source that records the page changes it is told about and the cancels, with where the

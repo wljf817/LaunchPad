@@ -30,7 +30,13 @@ class ECPagerLayer: CALayer, ECEventHandling {
     var startLocation: CGPoint = .zero
     var lastLocation: CGPoint = .zero
     var lastTime: UInt64 = 0
+    /// The scroll wheel's accumulated delta, whether a scroll gesture is under way, and the timer that
+    /// picks the page once the scroll wheel stops (REF-PAGING-006). The original spells the first
+    /// `_cummulativeDelta`.
+    var cummulativeDelta: CGFloat = 0
     var isDragScrolling = false
+    var isGestureScrolling = false
+    var scrollWheelTimer: DispatchSourceTimer?
 
     @objc(initWithPager:layoutRTL:)
     required init(pager: ECPager?, layoutRTL: Bool) {
