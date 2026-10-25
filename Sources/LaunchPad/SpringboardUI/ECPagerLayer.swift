@@ -82,10 +82,37 @@ class ECPagerLayer: CALayer, ECEventHandling {
         return true
     }
 
-    /// Ends a drag scroll (choosing the page is phase 2).
+    /// Ends a drag scroll: at or below REF-PAGING-005's speed it scrolls back to the current page;
+    /// above it, it goes to the page REF-PAGING-005 picks, with the original's unsigned arithmetic.
     @objc(leftMouseUp:)
     func leftMouseUp(_ event: ECEvent) -> Bool {
-        isDragScrolling = false
+        defer { isDragScrolling = false }
+        guard isDragScrolling else { return true }
+        let value = scrollValue
+        let location = event.location
+        let dx = location.x - lastLocation.x
+        let dy = location.y - lastLocation.y
+        // REF-PAGING-005: points per 10 ms of the CGEvent timestamps.
+        let speed = (dx * dx + dy * dy).squareRoot() / Double(event.time &- lastTime) * 10_000_000
+        guard speed > 2 else {  // REF-PAGING-005
+            scrollToPageIndex(currentPageIndex)
+            return true
+        }
+        let count = UInt(pager?.pages.count ?? 0)
+        let index: UInt
+        if value < 0 {
+            index = layoutRTL ? count &- 1 : 0
+        } else {
+            guard count > 0 else { return true }
+            let current = currentPageIndex
+            if layoutRTL {
+                let next = value > startScrollValue ? current &- 1 : current &+ 1
+                index = Int(bitPattern: next) < 0 ? 0 : next
+            } else {
+                index = min(value <= startScrollValue ? current &- 1 : current &+ 1, count - 1)
+            }
+        }
+        setCurrentPageIndex(index)
         return true
     }
 

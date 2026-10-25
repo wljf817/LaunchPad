@@ -541,6 +541,27 @@ struct PagingTests {
         return ECEvent(event: cgEvent, hitLayer: nil, hitWindow: nil, session: nil)
     }
 
+    /// Sends the main grid's pager layer a press at the first point, a drag to each further point and a
+    /// release at the last one `milliseconds` after the press; the drags are spread evenly in between.
+    /// The transaction is flushed after each event, as the dispatcher does (REF-OVERLAY-009). Returns the
+    /// scroll value after each drag.
+    @discardableResult
+    func drag(_ grid: ECSBSpringboard, _ points: [(CGFloat, CGFloat)], milliseconds: UInt64) -> [CGFloat] {
+        let start: UInt64 = 1_000_000_000
+        let step = milliseconds * 1_000_000 / UInt64(points.count)
+        _ = grid.layer.leftMouseDown(event(.leftMouseDown, points[0].0, points[0].1, at: start))
+        CATransaction.flush()
+        var values: [CGFloat] = []
+        for (index, point) in points.enumerated().dropFirst() {
+            _ = grid.layer.leftMouseDragged(event(.leftMouseDragged, point.0, point.1, at: start + UInt64(index) * step))
+            CATransaction.flush()
+            values.append(grid.layer.scrollValue)
+        }
+        let last = points[points.count - 1]
+        _ = grid.layer.leftMouseUp(event(.leftMouseUp, last.0, last.1, at: start + milliseconds * 1_000_000))
+        return values
+    }
+
     @Test("横向离按下点不到开始的距离时页不动，纵向移动不算")
     func dragBelowStartDistance() {
         let (grid, _) = makeGrid(pages: 3)
@@ -620,6 +641,156 @@ struct PagingTests {
         #expect(grid.currentPageIndex == 0)
     }
 
+    @Test("快拖过半页换到下一页，handler 先后收到 will 和 did；松开后不再在拖动翻页")
+    func flickToNextPage() {
+        let recorder = PageChangeRecorder(count: 3)
+        let (grid, _) = makeGrid(pages: 3, source: recorder)
+        recorder.grid = grid
+        let values = drag(grid, [(1200, 60), (800, 60), (400, 60)], milliseconds: 100)
+        #expect(values == [400, 800])
+        #expect(grid.currentPageIndex == 1)
+        #expect(grid.layer.scrollValue == 1536)
+        #expect(recorder.log == ["handler will page 1, at 800", "handler did page 1, at 1536"])
+        #expect(!grid.layer.isDragScrolling)
+    }
+
+    @Test("慢拖过半页滚回当前页，没有回调，动画的时长和曲线按 REF-PAGING-002；速度恰为阈值时也滚回")
+    func slowDragScrollsBack() throws {
+        let window = makeWindow()
+        let recorder = PageChangeRecorder(count: 3)
+        let (grid, _) = makeGrid(pages: 3, source: recorder)
+        recorder.grid = grid
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        window.layer.addSublayer(grid.layer)
+        CATransaction.commit()
+        CATransaction.flush()
+        UserDefaults.standard.removeObject(forKey: "springboard-page-duration")
+        springboardPageDuration = -1
+        defer {
+            grid.layer.removeFromSuperlayer()
+            springboardPageDuration = -1
+        }
+        let scrollLayer = grid.layer.scrollLayer
+        // 800 points in 10 s: 0.8 (REF-PAGING-005).
+        drag(grid, [(1200, 60), (400, 60)], milliseconds: 10_000)
+        #expect(grid.currentPageIndex == 0)
+        #expect(scrollLayer.bounds.minX == 0)
+        #expect(recorder.log.isEmpty)
+        let animation = try #require(scrollLayer.animation(forKey: "bounds") as? CABasicAnimation)
+        #expect(animation.duration == 0.5)
+        #expect(controlPoints(animation.timingFunction)[2].map(\.bitPattern) == [0x3EB7_8184, 0x3F80_3E42])
+        #expect((animation.fromValue as? NSValue)?.rectValue.minX == 800)
+        #expect(!grid.layer.isDragScrolling)
+        scrollLayer.removeAllAnimations()
+        // 200 points in 1 s: exactly 2.0.
+        drag(grid, [(1200, 60), (1000, 60)], milliseconds: 1000)
+        #expect(grid.currentPageIndex == 0)
+        #expect(recorder.log.isEmpty)
+    }
+
+    @Test("在最后一页向左快拖滚回最后一页，没有回调")
+    func flickOnLastPage() {
+        let recorder = PageChangeRecorder(count: 3)
+        let (grid, _) = makeGrid(pages: 3, source: recorder)
+        recorder.grid = grid
+        grid.currentPageIndex = 2
+        recorder.log.removeAll()
+        let values = drag(grid, [(1000, 60), (400, 60)], milliseconds: 100)
+        #expect(values == [3222])
+        #expect(grid.currentPageIndex == 2)
+        #expect(grid.layer.scrollValue == 3072)
+        #expect(recorder.log.isEmpty)
+    }
+
+    @Test("在第一页向右拉后松开，回到第一页")
+    func pullFirstPage() {
+        let recorder = PageChangeRecorder(count: 3)
+        let (grid, _) = makeGrid(pages: 3, source: recorder)
+        recorder.grid = grid
+        let values = drag(grid, [(400, 60), (800, 60)], milliseconds: 100)
+        #expect(values == [-100])
+        #expect(grid.currentPageIndex == 0)
+        #expect(grid.layer.scrollValue == 0)
+        #expect(recorder.log.isEmpty)
+    }
+
+    @Test("从右到左在第一页向右快拖，到第二页")
+    func flickRightToLeft() {
+        let (grid, _) = makeGrid(pages: 3, rtl: true)
+        drag(grid, [(400, 60), (1000, 60)], milliseconds: 100)
+        #expect(grid.currentPageIndex == 1)
+        #expect(grid.layer.scrollValue == 1536)
+    }
+
+    @Test("从左到右在第一页回到按下点、快速松开时到最后一页")
+    func backToPressGoesToLastPage() {
+        let recorder = PageChangeRecorder(count: 3)
+        let (grid, _) = makeGrid(pages: 3, source: recorder)
+        recorder.grid = grid
+        let values = drag(grid, [(1000, 60), (990, 60), (1000, 200), (1000, 360)], milliseconds: 150)
+        #expect(values == [10, 0, 0])
+        #expect(grid.currentPageIndex == 2)
+        #expect(recorder.log == ["handler will page 2, at 0", "handler did page 2, at 3072"])
+    }
+
+    @Test("从右到左在最后一页的对应情形什么也不发")
+    func backToPressRightToLeft() {
+        let recorder = PageChangeRecorder(count: 3)
+        let (grid, _) = makeGrid(pages: 3, rtl: true, source: recorder)
+        recorder.grid = grid
+        grid.currentPageIndex = 2
+        recorder.log.removeAll()
+        drag(grid, [(1000, 60), (990, 60), (1000, 200), (1000, 360)], milliseconds: 150)
+        #expect(grid.currentPageIndex == 2)
+        #expect(grid.layer.scrollValue == 0)
+        #expect(recorder.log.isEmpty)
+    }
+
+    @Test("没有在拖动翻页时松开，页不动；纵向拖过时也不取消")
+    func releaseWithoutDragScrolling() {
+        let recorder = PageChangeRecorder(count: 3)
+        let (grid, _) = makeGrid(pages: 3, source: recorder)
+        recorder.grid = grid
+        drag(grid, [(1000, 60), (1002, 70)], milliseconds: 100)
+        #expect(grid.currentPageIndex == 0)
+        #expect(grid.layer.scrollValue == 0)
+        #expect(recorder.log.isEmpty)
+        #expect(!grid.layer.isDragScrolling)
+    }
+
+    @Test("在空白处按下、拖动翻页后松开，覆盖层不关闭")
+    func dragDoesNotClose() {
+        let (grid, recorder, send) = makeClickableGrid()
+        defer { grid.layer.superlayer?.removeFromSuperlayer() }
+        send(.leftMouseDown, CGPoint(x: 1000, y: 800))
+        send(.leftMouseDragged, CGPoint(x: 600, y: 800))
+        send(.leftMouseDragged, CGPoint(x: 200, y: 800))
+        #expect(grid.layer.scrollValue == 800)
+        send(.leftMouseUp, CGPoint(x: 200, y: 800))
+        #expect(grid.currentPageIndex == 1)
+        #expect(!recorder.log.contains("cancel"))
+    }
+
+    @Test("在一个应用的名称上按下后快拖，换到下一页，应用没有启动")
+    func dragFromName() {
+        let scene = SceneGrid(emptyPages: 1)
+        let actions = RecordingGridActions()
+        scene.grid.pager.gridActionHandler = actions
+        let handler = RecordingHandler(layer: scene.top)
+        let controller = ECModalEventController.sharedController()
+        controller.addHandler(handler, externalEventSource: true, usingMouseHysteresis: true)
+        defer { controller.removeHandler(handler) }
+        let name = scene.name(3)
+        let end = CGPoint(x: name.x - 600, y: name.y)
+        scene.send(.leftMouseDown, name)
+        scene.send(.leftMouseDragged, end)
+        #expect(scene.grid.layer.scrollValue == 600)
+        scene.send(.leftMouseUp, end)
+        #expect(scene.grid.currentPageIndex == 1)
+        #expect(actions.performed.isEmpty)
+        #expect(actions.cancelled == 0)
+    }
 }
 
 /// A data source that records the page changes it is told about and the cancels, with where the

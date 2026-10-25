@@ -7,8 +7,8 @@ import Testing
 // page laid out with the original's default geometry; events are built in the test and dispatched by
 // the shared modal event controller, nothing is posted to the window server.
 
-/// The grid-items-still page in a window's layer tree, with the original's default geometry
-/// (REF-GRID-007, REF-GRID-008).
+/// The grid-items-still page, then `emptyPages` pages without items, in a window's layer tree, with
+/// the original's default geometry (REF-GRID-007, REF-GRID-008).
 @MainActor
 final class SceneGrid {
     let source: SceneDataSource
@@ -16,13 +16,13 @@ final class SceneGrid {
     let window: WALayerKitWindow
     let top = CALayer()
 
-    init() {
+    init(emptyPages: Int = 0) {
         let bundle = Bundle.module
         let fixture = try! JSONSerialization.jsonObject(with: Data(contentsOf: bundle.url(
             forResource: "grid-items-24G90", withExtension: "json", subdirectory: "Fixtures")!)) as! [String: Any]
         let geometry = try! JSONSerialization.jsonObject(with: Data(contentsOf: bundle.url(
             forResource: "grid-geometry-24G90", withExtension: "json", subdirectory: "Fixtures")!)) as! [String: Any]
-        source = SceneDataSource(scene: fixture["scene"] as! [[String]])
+        source = SceneDataSource(scene: fixture["scene"] as! [[String]], emptyPages: emptyPages)
         grid = ECSBSpringboard(handler: source, numberOfRowsPerPage: 5, numberOfColumnsPerPage: 7, scaleFactor: 1,
                                layoutRTL: false)
         let display = CGMainDisplayID()

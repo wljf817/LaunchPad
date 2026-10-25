@@ -402,7 +402,8 @@ final class SceneDataSource: NSObject, ECSBDataSource {
     let icon: CGImage
     let miniIcon: CGImage
 
-    init(scene: [[String]]) {
+    /// The scene's items on the first page, then `emptyPages` pages without items.
+    init(scene: [[String]], emptyPages: Int = 0) {
         let page = Node(title: "", kind: "page")
         var folder: Node?
         for row in scene {
@@ -419,7 +420,7 @@ final class SceneDataSource: NSObject, ECSBDataSource {
                 page.children.append(Node(title: row[0], kind: "item"))
             }
         }
-        pages = [page]
+        pages = [page] + (0..<emptyPages).map { _ in Node(title: "", kind: "page") }
         icon = Self.image(96)
         miniIcon = Self.image(22)
     }
