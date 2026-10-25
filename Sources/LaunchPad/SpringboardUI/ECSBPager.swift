@@ -92,13 +92,13 @@ class ECSBPager: ECPager {
     @objc var visible: Bool { _visible }
 
     /// Passes the visibility to the item layers of every page, and of a folder's items when they have
-    /// layers (REF-GRID-015). Marking the current page as recently viewed comes with the phase that
-    /// reads it.
+    /// layers (REF-GRID-015); only the current page stays recently viewed (REF-PAGING-001).
     @objc(setVisible:)
     func setVisible(_ visible: Bool) {
         guard _visible != visible else { return }
         _visible = visible
-        for case let page as ECSBPage in _pages {
+        let current = currentPageIndex
+        for case let (index, page as ECSBPage) in _pages.enumerated() {
             for case let item as ECSBItem in page.item.items ?? [] {
                 item.itemLayer?.setVisible(_visible)
                 if let groupItem = item as? ECSBGroupItem {
@@ -107,6 +107,34 @@ class ECSBPager: ECPager {
                     }
                 }
             }
+            page.recentlyViewed = UInt(index) == current
+        }
+    }
+
+    // MARK: - Page changes (REF-PAGING-001)
+
+    /// Clears the selection, then tells the pager source and the handler, when they respond; the
+    /// handler gets the page's model page.
+    @objc(willChangeToPageIndex:)
+    override func willChangeToPageIndex(_ index: UInt) {
+        selectedItem = nil
+        if let pagerSource, pagerSource.responds(to: #selector(ECPagerSource.willChangeToPageIndex(_:))) {
+            pagerSource.willChangeToPageIndex?(index)
+        }
+        let page = _pages[Int(index)] as? ECSBPage
+        if let handler = handler as? ECSBDelegate, handler.responds(to: #selector(ECSBDelegate.willChangeToPage(_:))) {
+            handler.willChangeToPage?(page?.item.clientItem)
+        }
+    }
+
+    @objc(didChangeToPageIndex:)
+    override func didChangeToPageIndex(_ index: UInt) {
+        if let pagerSource, pagerSource.responds(to: #selector(ECPagerSource.didChangeToPageIndex(_:))) {
+            pagerSource.didChangeToPageIndex?(index)
+        }
+        let page = _pages[Int(index)] as? ECSBPage
+        if let handler = handler as? ECSBDelegate, handler.responds(to: #selector(ECSBDelegate.didChangeToPage(_:))) {
+            handler.didChangeToPage?(page?.item.clientItem)
         }
     }
 }

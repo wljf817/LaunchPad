@@ -382,6 +382,75 @@ struct PagingTests {
         #expect(scrollLayer.animation(forKey: "bounds") == nil)
         #expect(inner.allSatisfy { $0.animation(forKey: "backgroundColor") == nil })
     }
+
+    // MARK: - Page change callbacks (REF-PAGING-001)
+
+    @Test("换页的先后：清选中项、pager source 的 will、handler 的 will、滚动、pager source 的 did、handler 的 did；参数是新页的模型页")
+    func pageChangeCallbacks() {
+        let recorder = PageChangeRecorder(count: 3)
+        let (grid, _) = makeGrid(pages: 3, source: recorder)
+        let pagerSource = RecordingPagerSource(grid: grid, recorder: recorder)
+        grid.pager.pagerSource = pagerSource
+        recorder.grid = grid
+        grid.pager.selectedItem = ECSBItem()
+        grid.currentPageIndex = 1
+        #expect(recorder.log == ["source will 1, selected nil, at 0", "handler will page 1, at 0",
+                                 "source did 1, at 1536", "handler did page 1, at 1536"])
+        recorder.log.removeAll()
+        grid.currentPageIndex = 1
+        grid.currentPageIndex = 3
+        #expect(recorder.log.isEmpty)
+        withExtendedLifetime(pagerSource) {}
+    }
+
+    @Test("pager source 或 handler 不响应时不发")
+    func pageChangeCallbacksNotResponding() {
+        let recorder = DidOnlyRecorder(count: 3)
+        let (grid, _) = makeGrid(pages: 3, source: recorder)
+        grid.currentPageIndex = 2
+        #expect(grid.currentPageIndex == 2)
+        #expect(recorder.pagesChangedTo.count == 1)
+        #expect((recorder.pagesChangedTo.first ?? nil) === recorder.pages[2])
+    }
+
+    @Test("-setVisible: 以后只有当前页是「最近看过」")
+    func recentlyViewedOnVisible() {
+        let (grid, _) = makeGrid(pages: 3)
+        grid.currentPageIndex = 1
+        let pages = grid.pager.pages as! [ECSBPage]
+        pages[0].recentlyViewed = true
+        pages[2].recentlyViewed = true
+        grid.setVisible(true)
+        #expect(pages.map(\.recentlyViewed) == [false, true, false])
+        pages.forEach { $0.recentlyViewed = true }
+        grid.setVisible(false)
+        #expect(pages.map(\.recentlyViewed) == [false, true, false])
+    }
+
+    @Test("打开再关闭不改当前页，打开后仍显示那一页")
+    func openAndCloseKeepPage() {
+        let controller = QuietSpringboard()
+        let root = LPRoot()
+        for _ in 0..<3 {
+            root.children.add(LPPage(items: nil))
+        }
+        controller.rootPage = root
+        controller.springboard.invalidate()
+        controller.springboard.currentPageIndex = 1
+        controller.setVisible(true, reason: "test")
+        defer {
+            controller._purgeItemsTimer?.cancel()
+            controller._purgeItemsTimer = nil
+        }
+        #expect(controller.animations == [true])
+        let grid: ECSBSpringboard = controller.springboard
+        #expect(grid.currentPageIndex == 1)
+        #expect(grid.layer.scrollLayer.bounds.minX == grid.layer.bounds.width)
+        #expect(dots(grid).map(\.state) == [0, 1, 0])
+        controller.setVisible(false, reason: "test")
+        #expect(controller.animations == [true, false])
+        #expect(grid.currentPageIndex == 1)
+    }
 }
 
 /// A data source that records the page changes it is told about and the cancels, with where the
@@ -412,6 +481,57 @@ final class PageChangeRecorder: PageSource, ECSBDelegate, ECSBActionHandling {
     func cancelAction(with event: ECEvent?, sender: AnyObject?) {
         log.append("cancel")
     }
+}
+
+/// A data source that only answers the page change after it happened.
+@MainActor
+final class DidOnlyRecorder: PageSource, ECSBDelegate {
+    var pagesChangedTo: [AnyObject?] = []
+
+    func didChangeToPage(_ page: AnyObject?) {
+        pagesChangedTo.append(page)
+    }
+}
+
+/// The main grid as the pager source, with the page changes it is told about recorded.
+@MainActor
+final class RecordingPagerSource: NSObject, ECPagerSource {
+    let grid: ECSBSpringboard
+    let recorder: PageChangeRecorder
+
+    init(grid: ECSBSpringboard, recorder: PageChangeRecorder) {
+        self.grid = grid
+        self.recorder = recorder
+    }
+
+    func numberOfPages(for pager: ECPager) -> UInt { grid.numberOfPages(for: pager) }
+    func makePage(for pager: ECPager, at index: UInt) -> ECPage? { grid.makePage(for: pager, at: index) }
+    func pageItems(for pager: ECPager) -> NSArray? { grid.pageItems(for: pager) }
+    func layoutPage(_ page: ECPage, for pager: ECPager) { grid.layoutPage(page, for: pager) }
+
+    func willChangeToPageIndex(_ index: UInt) {
+        let selected = grid.pager.selectedItem == nil ? "nil" : "kept"
+        recorder.log.append("source will \(index), selected \(selected), at \(Int(recorder.scroll))")
+    }
+
+    func didChangeToPageIndex(_ index: UInt) {
+        recorder.log.append("source did \(index), at \(Int(recorder.scroll))")
+    }
+}
+
+/// A controller that opens and closes without the window, the background, the Dock or the
+/// animations, recording the animations it would run.
+@MainActor
+final class QuietSpringboard: LPSpringboard {
+    var animations: [Bool] = []
+
+    override func _enterExitAnimation(_ enter: Bool, slow: Bool) {
+        animations.append(enter)
+    }
+
+    override func orderWindowOn(_ on: Bool) {}
+    override func updateDesktopImages() {}
+    override func showsDock() -> Bool { false }
 }
 
 /// `count` empty pages, as the layout root's children.

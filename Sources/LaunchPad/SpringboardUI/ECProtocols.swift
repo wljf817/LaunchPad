@@ -2,7 +2,7 @@ import QuartzCore
 
 // The protocols between the controller, the grid components and their layers (REF-ARCH-006,
 // REF-ARCH-013). Selectors and optionality are the original's; only the methods the grid tree uses
-// are declared. Optional methods are sent without checking, as the original does.
+// are declared. Optional methods are sent without checking unless the original checks.
 
 /// The controller as the grid's data source.
 @MainActor
@@ -29,6 +29,12 @@ protocol ECPagerSource: NSObjectProtocol {
 
     @objc(layoutPage:forPager:)
     optional func layoutPage(_ page: ECPage, for pager: ECPager)
+
+    @objc(willChangeToPageIndex:)
+    optional func willChangeToPageIndex(_ index: UInt)
+
+    @objc(didChangeToPageIndex:)
+    optional func didChangeToPageIndex(_ index: UInt)
 }
 
 /// The source of a grid layer's item layers and their contents.
@@ -109,10 +115,17 @@ protocol ECEventHandling: NSObjectProtocol {
 protocol ECEventHandlingDelegate: NSObjectProtocol {}
 
 /// The controller as the delegate of the grid components. The pager tells it when editing begins and
-/// ends; no class of the original implements either method (research paper §5.9).
+/// ends; no class of the original implements either method (research paper §5.9). It also tells it
+/// before and after the current page changes, with the model page (REF-PAGING-001).
 @MainActor
 @objc(ECSBDelegate)
 protocol ECSBDelegate: NSObjectProtocol {
+    @objc(willChangeToPage:)
+    optional func willChangeToPage(_ page: AnyObject?)
+
+    @objc(didChangeToPage:)
+    optional func didChangeToPage(_ page: AnyObject?)
+
     @objc optional func didBeginEditing()
     @objc optional func didEndEditing()
 }
