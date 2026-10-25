@@ -24,7 +24,9 @@ class ECPagerLayer: CALayer, ECEventHandling {
     /// When the page indicator shows (REF-PAGING-003); 2 for the main grid.
     @objc var pagerControlVisibility = 2
     var layoutRTL = false
-    /// Where the left button was pressed, and the last location and time seen (research paper §4).
+    /// The scroll value and the location when the left button was pressed, and the last location and
+    /// time seen (REF-PAGING-005).
+    var startScrollValue: CGFloat = 0
     var startLocation: CGPoint = .zero
     var lastLocation: CGPoint = .zero
     var lastTime: UInt64 = 0
@@ -52,10 +54,10 @@ class ECPagerLayer: CALayer, ECEventHandling {
 
     // MARK: - Events (research paper §4)
 
-    /// Records where the press started. The start scroll value comes with the drag scrolling
-    /// (phase 2).
+    /// Records the press: the scroll value, the location and the time (REF-PAGING-005).
     @objc(leftMouseDown:)
     func leftMouseDown(_ event: ECEvent) -> Bool {
+        startScrollValue = scrollValue
         startLocation = event.location
         lastLocation = startLocation
         lastTime = event.time
@@ -63,10 +65,21 @@ class ECPagerLayer: CALayer, ECEventHandling {
         return true
     }
 
-    /// Drag scrolling is phase 2.
+    /// Starts drag scrolling once the pointer is REF-PAGING-005's distance from the press
+    /// horizontally; from then on the pages follow the pointer with implicit actions disabled. The last
+    /// location and time stay those of the press (REF-PAGING-005).
     @objc(leftMouseDragged:)
     func leftMouseDragged(_ event: ECEvent) -> Bool {
-        true
+        if !isDragScrolling {
+            guard abs(startLocation.x - event.location.x) >= 3 else { return true }  // REF-PAGING-005
+            isDragScrolling = true
+        }
+        let disabled = disableActions()
+        scrollValue = startScrollValue + (startLocation.x - event.location.x)
+        if disabled {
+            CATransaction.setDisableActions(false)
+        }
+        return true
     }
 
     /// Ends a drag scroll (choosing the page is phase 2).

@@ -531,6 +531,95 @@ struct PagingTests {
         #expect(grid.currentPageIndex == 2)
         #expect(recorder.log == ["handler will page 2, at 0", "handler did page 2, at 3072"])
     }
+
+    // MARK: - Drag scrolling (REF-PAGING-005)
+
+    /// A mouse event at (x, y) whose CGEvent timestamp is `time` nanoseconds (REF-PAGING-005).
+    func event(_ type: CGEventType, _ x: CGFloat, _ y: CGFloat, at time: UInt64) -> ECEvent {
+        let cgEvent = mouseEvent(type, at: CGPoint(x: x, y: y))
+        cgEvent.timestamp = time
+        return ECEvent(event: cgEvent, hitLayer: nil, hitWindow: nil, session: nil)
+    }
+
+    @Test("横向离按下点不到开始的距离时页不动，纵向移动不算")
+    func dragBelowStartDistance() {
+        let (grid, _) = makeGrid(pages: 3)
+        _ = grid.layer.leftMouseDown(event(.leftMouseDown, 1000, 60, at: 0))
+        _ = grid.layer.leftMouseDragged(event(.leftMouseDragged, 1002, 200, at: 1))
+        #expect(grid.layer.scrollValue == 0)
+        #expect(!grid.layer.isDragScrolling)
+        _ = grid.layer.leftMouseDragged(event(.leftMouseDragged, 997, 60, at: 2))
+        #expect(grid.layer.isDragScrolling)
+        #expect(grid.layer.scrollValue == 3)
+    }
+
+    @Test("开始以后滚动值等于按下时的滚动值加上指针向左移的距离，从第二页开始也对")
+    func dragFollowsPointer() {
+        let (grid, _) = makeGrid(pages: 3)
+        grid.currentPageIndex = 1
+        _ = grid.layer.leftMouseDown(event(.leftMouseDown, 1000, 60, at: 0))
+        #expect(grid.layer.startScrollValue == 1536)
+        _ = grid.layer.leftMouseDragged(event(.leftMouseDragged, 900, 80, at: 1))
+        #expect(grid.layer.scrollValue == 1636)
+        _ = grid.layer.leftMouseDragged(event(.leftMouseDragged, 1100, 40, at: 2))
+        #expect(grid.layer.scrollValue == 1436)
+        #expect(grid.layer.lastLocation == CGPoint(x: 1000, y: 60))
+        #expect(grid.layer.lastTime == 0)
+    }
+
+    @Test("拖动中滚动 layer 上没有动画；隐式动画调用前开着就仍开着，关着就仍关着")
+    func dragWithoutAnimation() {
+        let window = makeWindow()
+        let (grid, _) = makeGrid(pages: 3)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        window.layer.addSublayer(grid.layer)
+        CATransaction.commit()
+        CATransaction.flush()
+        defer { grid.layer.removeFromSuperlayer() }
+        let scrollLayer = grid.layer.scrollLayer
+        _ = grid.layer.leftMouseDown(event(.leftMouseDown, 1000, 60, at: 0))
+        _ = grid.layer.leftMouseDragged(event(.leftMouseDragged, 900, 60, at: 1))
+        #expect(scrollLayer.animation(forKey: "bounds") == nil)
+        #expect(!CATransaction.disableActions())
+        CATransaction.setDisableActions(true)
+        _ = grid.layer.leftMouseDragged(event(.leftMouseDragged, 800, 60, at: 2))
+        #expect(CATransaction.disableActions())
+        CATransaction.setDisableActions(false)
+        #expect(scrollLayer.animation(forKey: "bounds") == nil)
+        #expect(grid.layer.scrollValue == 200)
+    }
+
+    @Test("拉过第一页左边时按 REF-PAGING-002 只走四分之一")
+    func dragPastFirstPage() {
+        let (grid, _) = makeGrid(pages: 3)
+        _ = grid.layer.leftMouseDown(event(.leftMouseDown, 400, 60, at: 0))
+        _ = grid.layer.leftMouseDragged(event(.leftMouseDragged, 800, 60, at: 1))
+        #expect(grid.layer.scrollValue == -100)
+    }
+
+    @Test("拖动中当前页和圆点的状态不变，handler 收不到换页回调")
+    func dragKeepsPage() {
+        let recorder = PageChangeRecorder(count: 3)
+        let (grid, _) = makeGrid(pages: 3, source: recorder)
+        recorder.grid = grid
+        _ = grid.layer.leftMouseDown(event(.leftMouseDown, 1300, 60, at: 0))
+        _ = grid.layer.leftMouseDragged(event(.leftMouseDragged, 300, 60, at: 1))
+        #expect(grid.layer.scrollValue == 1000)
+        #expect(grid.currentPageIndex == 0)
+        #expect(dots(grid).map(\.state) == [1, 0, 0])
+        #expect(recorder.log.isEmpty)
+    }
+
+    @Test("从右到左时拖动的算法相同")
+    func dragRightToLeft() {
+        let (grid, _) = makeGrid(pages: 3, rtl: true)
+        _ = grid.layer.leftMouseDown(event(.leftMouseDown, 400, 60, at: 0))
+        _ = grid.layer.leftMouseDragged(event(.leftMouseDragged, 1000, 60, at: 1))
+        #expect(grid.layer.scrollValue == 2472)
+        #expect(grid.currentPageIndex == 0)
+    }
+
 }
 
 /// A data source that records the page changes it is told about and the cancels, with where the
