@@ -66,6 +66,48 @@ final class ECEvent: NSObject {
         field(64)
     }
 
+    /// The horizontal scroll delta: integer field 94, 16.16 fixed point (REF-OVERLAY-009).
+    @objc var deltaX: Double {
+        Double(integerField(94)) / 65536
+    }
+
+    /// The vertical scroll delta: integer field 93, 16.16 fixed point (REF-OVERLAY-009).
+    @objc var deltaY: Double {
+        Double(integerField(93)) / 65536
+    }
+
+    /// Whether the scroll event has a momentum phase: integer field 123 (REF-OVERLAY-009).
+    @objc var isMomentum: Bool {
+        integerField(123) != 0
+    }
+
+    /// The gesture's type: integer field 110 (REF-OVERLAY-009).
+    @objc var gestureType: Int64 {
+        integerField(110)
+    }
+
+    /// The gesture's phase: began 1, changed 2, ended 4, cancelled 8, from the low byte of integer
+    /// field 132; any other value is 0 (REF-OVERLAY-009).
+    @objc var gesturePhase: UInt64 {
+        let phases: [UInt64] = [1, 2, 0, 4, 0, 0, 0, 8]  // REF-OVERLAY-009
+        let index = Int(UInt8(truncatingIfNeeded: integerField(132) &- 1))
+        return index < phases.count ? phases[index] : 0
+    }
+
+    /// The direction of a navigation gesture (gesture type 16) from integer fields 115 and 136;
+    /// `Int64.max` for any other gesture or direction (REF-OVERLAY-009).
+    @objc var navigationGestureType: Int64 {
+        guard integerField(110) == 16 else { return .max }
+        let bit = integerField(136) & 1
+        switch integerField(115) {  // REF-OVERLAY-009
+        case 1: return 1
+        case 2: return 0
+        case 4: return bit | 2
+        case 8: return bit ^ 3
+        default: return .max
+        }
+    }
+
     /// Drops the event and everything it refers to once the dispatcher is done with it.
     @objc func invalidate() {
         hitLayer = nil
@@ -77,5 +119,10 @@ final class ECEvent: NSObject {
     private func field(_ number: UInt32) -> UInt16 {
         guard let cgEvent, let field = CGEventField(rawValue: number) else { return 0 }
         return UInt16(truncatingIfNeeded: cgEvent.getIntegerValueField(field))
+    }
+
+    private func integerField(_ number: UInt32) -> Int64 {
+        guard let cgEvent, let field = CGEventField(rawValue: number) else { return 0 }
+        return cgEvent.getIntegerValueField(field)
     }
 }

@@ -17,6 +17,8 @@ final class RecordingLayer: CALayer {
     @objc(leftMouseUp:) func leftMouseUp(_ event: ECEvent) -> Bool { calls.append("up"); return handles }
     @objc(leftMouseDragged:) func leftMouseDragged(_ event: ECEvent) -> Bool { calls.append("dragged"); return handles }
     @objc(keyDown:) func keyDown(_ event: ECEvent) -> Bool { calls.append("keyDown"); return handles }
+    @objc(scrollWheel:) func scrollWheel(_ event: ECEvent) -> Bool { calls.append("scrollWheel"); return handles }
+    @objc(gesture:) func gesture(_ event: ECEvent) -> Bool { calls.append("gesture"); return handles }
 }
 
 /// An event delegate that records the `action:in:` methods it gets, with the layer.
@@ -60,6 +62,31 @@ func keyEvent(_ keyCode: CGKeyCode, character: Int64, down: Bool = true) -> CGEv
     return event
 }
 
+/// A scroll wheel event at `location` with the fixed-point deltas and the momentum phase given
+/// (REF-OVERLAY-009).
+func scrollEvent(dx: Double = 0, dy: Double = 0, momentum: Int64 = 0, at location: CGPoint = .zero) -> CGEvent {
+    let event = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2, wheel1: 0, wheel2: 0, wheel3: 0)!
+    event.location = location
+    event.setIntegerValueField(CGEventField(rawValue: 93)!, value: Int64(dy * 65536))  // REF-OVERLAY-009
+    event.setIntegerValueField(CGEventField(rawValue: 94)!, value: Int64(dx * 65536))
+    event.setIntegerValueField(CGEventField(rawValue: 123)!, value: momentum)
+    return event
+}
+
+/// A gesture event at `location`: gesture type, phase, and for a navigation gesture the direction
+/// field and the field whose low bit flips it (REF-OVERLAY-009).
+func gestureEvent(type: Int64, phase: Int64 = 0, direction: Int64 = 0, flip: Int64 = 0,
+                  at location: CGPoint = .zero) -> CGEvent {
+    let event = CGEvent(source: nil)!
+    event.type = CGEventType(rawValue: 29)!
+    event.location = location
+    event.setIntegerValueField(CGEventField(rawValue: 110)!, value: type)  // REF-OVERLAY-009
+    event.setIntegerValueField(CGEventField(rawValue: 132)!, value: phase)
+    event.setIntegerValueField(CGEventField(rawValue: 115)!, value: direction)
+    event.setIntegerValueField(CGEventField(rawValue: 136)!, value: flip)
+    return event
+}
+
 func notificationEvent(code: Int64) -> CGEvent {
     let event = CGEvent(source: nil)!
     event.type = CGEventType(rawValue: 21)!
@@ -85,6 +112,43 @@ func notificationEvent(code: Int64) -> CGEvent {
         let notification = ECEvent(event: notificationEvent(code: 0xf102), hitLayer: nil, hitWindow: nil, session: nil)
         #expect(notification.type == 21)
         #expect(notification.notifyCode == 0xf102)
+    }
+
+    @Test("滚轮的取值：定点数增量除以 65536，动量阶段不为 0 时是动量事件")
+    func scrollFields() {
+        let event = ECEvent(event: scrollEvent(dx: 1.5, dy: -1, momentum: 2), hitLayer: nil, hitWindow: nil, session: nil)
+        #expect(event.type == 22)
+        #expect(event.deltaX == 1.5)
+        #expect(event.deltaY == -1)
+        #expect(event.isMomentum)
+        #expect(!ECEvent(event: scrollEvent(dy: 1), hitLayer: nil, hitWindow: nil, session: nil).isMomentum)
+        // A wheel scrolled one line: the system's fixed-point delta is -1.
+        let line = CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 1, wheel1: -1, wheel2: 0, wheel3: 0)!
+        #expect(ECEvent(event: line, hitLayer: nil, hitWindow: nil, session: nil).deltaY == -1)
+    }
+
+    @Test("手势的类型照读；阶段只认 1、2、4、8，看最低的字节，其余为 0")
+    func gestureFields() {
+        func phase(_ value: Int64) -> UInt64 {
+            ECEvent(event: gestureEvent(type: 6, phase: value), hitLayer: nil, hitWindow: nil, session: nil).gesturePhase
+        }
+        #expect(ECEvent(event: gestureEvent(type: 6), hitLayer: nil, hitWindow: nil, session: nil).gestureType == 6)
+        #expect(ECEvent(event: gestureEvent(type: 6), hitLayer: nil, hitWindow: nil, session: nil).type == 29)
+        #expect([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 16, 0x101, 0x104].map(phase) == [0, 1, 2, 0, 4, 0, 0, 0, 8, 0, 0, 1, 4])
+    }
+
+    @Test("导航轻扫的方向：1→1、2→0、4→2、8→3，另一字段最低位为 1 时 4、8 对调；别的手势或方向是最大整数")
+    func navigationGestureType() {
+        func type(_ gesture: Int64, _ direction: Int64, flip: Int64 = 0) -> Int64 {
+            ECEvent(event: gestureEvent(type: gesture, direction: direction, flip: flip), hitLayer: nil, hitWindow: nil,
+                    session: nil).navigationGestureType
+        }
+        #expect([1, 2, 4, 8].map { type(16, $0) } == [1, 0, 2, 3])
+        #expect([1, 2, 4, 8].map { type(16, $0, flip: 1) } == [1, 0, 3, 2])
+        #expect([4, 8].map { type(16, $0, flip: 2) } == [2, 3])
+        #expect(type(16, 3) == .max)
+        #expect(type(16, 0) == .max)
+        #expect(type(6, 1) == .max)
     }
 
     @Test("invalidate 后不再持有事件和命中的对象；处理者是弱引用")
@@ -167,6 +231,29 @@ func notificationEvent(code: Int64) -> CGEvent {
         #expect(child.calls.isEmpty)
         #expect(handler.calls.isEmpty)
         child.eventDelegate = nil
+    }
+
+    @Test("滚轮和手势事件按命中的 layer 往上送；按住鼠标时也不交给按下时的捕获")
+    func scrollAndGesture() {
+        let handler = RecordingHandler(layer: top)
+        let other = RecordingLayer()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        other.frame = CGRect(x: 300, y: 300, width: 100, height: 100)
+        top.addSublayer(other)
+        CATransaction.commit()
+        CATransaction.flush()
+        controller.addHandler(handler, externalEventSource: true, usingMouseHysteresis: true)
+        send(scrollEvent(dy: 1, at: global(CGPoint(x: 50, y: 50))))
+        send(gestureEvent(type: 6, phase: 1, at: global(CGPoint(x: 50, y: 50))))
+        #expect(child.calls == ["scrollWheel", "gesture"])
+        send(mouseEvent(.leftMouseDown, at: global(CGPoint(x: 50, y: 50))))
+        send(scrollEvent(dy: 1, at: global(CGPoint(x: 350, y: 350))))
+        send(gestureEvent(type: 6, phase: 4, at: global(CGPoint(x: 350, y: 350))))
+        #expect(child.calls == ["scrollWheel", "gesture", "down"])
+        #expect(other.calls == ["scrollWheel", "gesture"])
+        #expect(handler.calls.isEmpty)
+        other.removeFromSuperlayer()
     }
 
     @Test("layer 自己捕获后，拖动和松开都交给它，不再看位置")

@@ -103,6 +103,12 @@ protocol ECEventHandling: NSObjectProtocol {
     @objc(flagsChanged:)
     optional func flagsChanged(_ event: ECEvent) -> Bool
 
+    @objc(scrollWheel:)
+    optional func scrollWheel(_ event: ECEvent) -> Bool
+
+    @objc(gesture:)
+    optional func gesture(_ event: ECEvent) -> Bool
+
     @objc(lostKeyFocus:)
     optional func lostKeyFocus(_ event: ECEvent?)
 }

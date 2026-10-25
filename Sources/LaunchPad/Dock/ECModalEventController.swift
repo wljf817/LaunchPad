@@ -19,8 +19,9 @@ protocol ECModalEventHandler: NSObjectProtocol {
 
 /// Dock's modal event controller (app-architecture: kept): a stack of modal handlers; each event goes
 /// to the one on top, to the layer it hits or that layer's event delegate (REF-OVERLAY-009). Only the
-/// event types this sub-phase handles are dispatched: left button press, drag and release, key down
-/// and up, modifier changes and notifications.
+/// event types the sub-phases so far handle are dispatched: left button press, drag and release, key
+/// down and up, modifier changes, notifications, scroll wheel and gestures. The force press that the
+/// original sends after a gesture is not.
 @MainActor
 @objc(ECModalEventController)
 final class ECModalEventController: NSObject {
@@ -159,6 +160,14 @@ final class ECModalEventController: NSObject {
             _ = _dispatchAction(#selector(ECEventHandling.flagsChanged(_:)), delegateAction: Selector(("flagsChanged:in:")),
                                 for: ev, withEventCapture: entry.mouseDownCapture, topLayer: topLayer, hitTestLayer: layer,
                                 handler: handler)
+            ecEvent = ev
+        case 22, 29:  // scroll wheel, gesture: without the capture (REF-OVERLAY-009)
+            let (layer, window) = hit()
+            let ev = ECEvent(event: eventObject, hitLayer: layer, hitWindow: window, session: handler)
+            let wheel = event.type.rawValue == 22
+            _ = _dispatchAction(wheel ? #selector(ECEventHandling.scrollWheel(_:)) : #selector(ECEventHandling.gesture(_:)),
+                                delegateAction: wheel ? Selector(("scrollWheel:in:")) : Selector(("gesture:in:")),
+                                for: ev, withEventCapture: nil, topLayer: topLayer, hitTestLayer: layer, handler: handler)
             ecEvent = ev
         case 21:  // notification
             let code = event.getIntegerValueField(CGEventField(rawValue: 64)!)
