@@ -3,8 +3,8 @@
 /Packages
 xcuserdata/
 DerivedData/
-.swiftpm/configuration/registries.json
-.swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
+/.swiftpm/
+/.vscode/
 .netrc
 
 # Local-only reverse-engineering material (clean room)
