@@ -277,4 +277,70 @@ class ECSBLayer: ECPagerLayer, ECEventHandlingDelegate {
         scrollWheelTimer = timer
         return true
     }
+
+    /// A scroll gesture's beginning stops the scroll wheel's timer and records the start; its end picks
+    /// the page by the average speed of the pages over the whole gesture, as the end of a drag does
+    /// (REF-PAGING-005). A navigation gesture goes to the next or the previous page. The shown folder's
+    /// case is phase 5.
+    @objc(gesture:)
+    func gesture(_ event: ECEvent) -> Bool {
+        guard let pager = pager as? ECSBPager, pager.canScroll() else { return true }
+        let layoutRTL = layoutRTL
+        switch event.gestureType {
+        case 6:  // REF-PAGING-006: scroll
+            guard pager.eventHandler?.dragCapture == nil else { return true }
+            let phase = event.gesturePhase
+            if phase & 1 != 0 {
+                scrollWheelTimer?.cancel()
+                scrollWheelTimer = nil
+                isGestureScrolling = true
+                startScrollValue = scrollValue
+                startLocation = event.location
+                lastLocation = startLocation
+                lastTime = event.time
+                cummulativeDelta = 0
+                return true
+            }
+            guard phase & 4 != 0 else { return true }
+            isGestureScrolling = false
+            scrollWheelTimer?.cancel()
+            scrollWheelTimer = nil
+            let value = scrollValue
+            let distance = value - startScrollValue
+            // REF-PAGING-005: points per 10 ms of the CGEvent timestamps.
+            let speed = (distance * distance).squareRoot() / Double(event.time &- lastTime) * 10_000_000
+            guard speed > 2 else {  // REF-PAGING-005
+                scrollToPageIndex(currentPageIndex)
+                return true
+            }
+            let count = UInt(pager.pages.count)
+            let index: UInt
+            if value < 0 {
+                index = layoutRTL ? count &- 1 : 0
+            } else {
+                guard count > 0 else { return true }
+                let current = currentPageIndex
+                if layoutRTL {
+                    let next = value > startScrollValue ? current &- 1 : current &+ 1
+                    index = Int(bitPattern: next) < 0 ? 0 : next
+                } else {
+                    index = min(value <= startScrollValue ? current &- 1 : current &+ 1, count - 1)
+                }
+            }
+            setCurrentPageIndex(index)
+        case 16:  // REF-PAGING-006: navigation
+            let current = currentPageIndex
+            switch event.navigationGestureType {
+            case 0, 2:
+                setCurrentPageIndex(layoutRTL ? current &+ 1 : current &- 1)
+            case 1, 3:
+                setCurrentPageIndex(layoutRTL ? current &- 1 : current &+ 1)
+            default:
+                break
+            }
+        default:
+            break
+        }
+        return true
+    }
 }

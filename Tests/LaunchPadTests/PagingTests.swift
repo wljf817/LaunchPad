@@ -818,6 +818,17 @@ struct PagingTests {
         return handled
     }
 
+    /// Sends the main grid's pager layer a gesture event whose CGEvent timestamp is `time` milliseconds.
+    @discardableResult
+    func gesture(_ grid: ECSBSpringboard, type: Int64 = 6, phase: Int64 = 0, direction: Int64 = 0,
+                 at time: UInt64 = 0) -> Bool {
+        let cgEvent = gestureEvent(type: type, phase: phase, direction: direction, at: CGPoint(x: 1000, y: 60))
+        cgEvent.timestamp = 1_000_000_000 + time * 1_000_000
+        let handled = grid.layer.gesture(ECEvent(event: cgEvent, hitLayer: nil, hitWindow: nil, session: nil))
+        CATransaction.flush()
+        return handled
+    }
+
     /// Lets the scroll wheel's timer fire on the main queue (REF-PAGING-006).
     func waitForWheelTimer() async {
         try? await Task.sleep(for: .milliseconds(200))
@@ -964,7 +975,183 @@ struct PagingTests {
         await waitForWheelTimer()
         #expect(grid.currentPageIndex == 1)
         #expect(recorder.log == ["handler will page 1, at 3070", "handler did page 1, at 1536"])
-    }}
+    }
+
+    /// Starts dragging an item of the first page (research paper §5.9).
+    func startItemDrag(_ grid: ECSBSpringboard) {
+        let page = grid.pager.pages[0] as! ECSBPage
+        grid.eventHandler.dragCapture = ECSBDragCapture(itemLayer: ECSBItemLayer(scaleFactor: 1, layoutRTL: false), fromPage: page,
+                                                        usingEventHandler: grid.eventHandler)
+    }
+
+    @Test("正在拖动图标时，滚轮和滚动手势什么都不做")
+    func wheelWhileDraggingItem() async {
+        let (grid, recorder) = makeRecordedGrid()
+        startItemDrag(grid)
+        defer { grid.eventHandler.dragCapture = nil }
+        #expect(!grid.pager.canScroll())
+        #expect(wheel(grid, dy: -1))
+        #expect(gesture(grid, phase: 1))
+        #expect(!grid.layer.isGestureScrolling)
+        #expect(grid.layer.scrollValue == 0)
+        #expect(grid.layer.scrollWheelTimer == nil)
+        await waitForWheelTimer()
+        #expect(recorder.log.isEmpty)
+    }
+
+    @Test("快滑：手势中页跟手、不起计时器；结束时滑到第二页，之后的动量事件不动")
+    func gestureFlick() async {
+        let (grid, recorder) = makeRecordedGrid()
+        #expect(gesture(grid, phase: 1, at: 0))
+        #expect(grid.layer.isGestureScrolling)
+        for _ in 0..<4 {
+            wheel(grid, dy: -100)
+        }
+        #expect(grid.layer.scrollValue == 800)
+        #expect(grid.layer.scrollWheelTimer == nil)
+        // 800 points in 100 ms: 80 (REF-PAGING-005).
+        #expect(gesture(grid, phase: 4, at: 100))
+        #expect(!grid.layer.isGestureScrolling)
+        #expect(grid.currentPageIndex == 1)
+        #expect(recorder.log == ["handler will page 1, at 800", "handler did page 1, at 1536"])
+        wheel(grid, dy: -100, momentum: 2)
+        #expect(grid.layer.scrollValue == 1536)
+        await waitForWheelTimer()
+        #expect(grid.currentPageIndex == 1)
+    }
+
+    @Test("慢滑：结束时用翻页动画滑回第一页，没有回调")
+    func gestureSlow() throws {
+        let window = makeWindow()
+        let (grid, recorder) = makeRecordedGrid()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        window.layer.addSublayer(grid.layer)
+        CATransaction.commit()
+        defer { grid.layer.removeFromSuperlayer() }
+        gesture(grid, phase: 1, at: 0)
+        wheel(grid, dy: -100)
+        // 200 points in 1 s: exactly 2.0 (REF-PAGING-005).
+        gesture(grid, phase: 4, at: 1000)
+        #expect(grid.currentPageIndex == 0)
+        #expect(grid.layer.scrollValue == 0)
+        #expect(recorder.log.isEmpty)
+        let animation = try #require(grid.layer.scrollLayer.animation(forKey: "bounds") as? CABasicAnimation)
+        #expect((animation.fromValue as? NSValue)?.rectValue.minX == 200)
+    }
+
+    @Test("手势中停下也不选页；开始时取消等着的滚轮计时器")
+    func gestureWithoutTimer() async {
+        let (grid, recorder) = makeRecordedGrid()
+        wheel(grid, dy: -1)
+        #expect(grid.layer.scrollWheelTimer != nil)
+        gesture(grid, phase: 1, at: 0)
+        #expect(grid.layer.scrollWheelTimer == nil)
+        #expect(grid.layer.startScrollValue == 2)
+        wheel(grid, dy: -100)
+        gesture(grid, phase: 2, at: 50)
+        await waitForWheelTimer()
+        #expect(grid.layer.scrollValue == 202)
+        #expect(grid.currentPageIndex == 0)
+        #expect(recorder.log.isEmpty)
+    }
+
+    @Test("手势被取消时标记不清，之后的滚轮只跟手、不选页")
+    func gestureCancelled() async {
+        let (grid, recorder) = makeRecordedGrid()
+        gesture(grid, phase: 1, at: 0)
+        gesture(grid, phase: 8, at: 50)
+        #expect(grid.layer.isGestureScrolling)
+        wheel(grid, dy: -1)
+        #expect(grid.layer.scrollValue == 2)
+        #expect(grid.layer.scrollWheelTimer == nil)
+        await waitForWheelTimer()
+        #expect(grid.currentPageIndex == 0)
+        #expect(recorder.log.isEmpty)
+        grid.layer.isGestureScrolling = false
+    }
+
+    @Test("从右到左：滚动手势使滚动位置向左移动、快速结束时滑到第二页")
+    func gestureRightToLeft() {
+        let (grid, recorder) = makeRecordedGrid(rtl: true)
+        gesture(grid, phase: 1, at: 0)
+        wheel(grid, dy: 400)
+        #expect(grid.layer.scrollValue == 2272)
+        gesture(grid, phase: 4, at: 100)
+        #expect(grid.currentPageIndex == 1)
+        #expect(recorder.log == ["handler will page 1, at 2272", "handler did page 1, at 1536"])
+    }
+
+    @Test("其余手势类型什么都不做；每次都返回 YES")
+    func gestureOtherTypes() {
+        let (grid, recorder) = makeRecordedGrid()
+        #expect(gesture(grid, type: 8, phase: 1))
+        #expect(!grid.layer.isGestureScrolling)
+        #expect(gesture(grid, type: 16, direction: 3))
+        #expect(gesture(grid, type: 6, phase: 2))
+        #expect(grid.currentPageIndex == 0)
+        #expect(recorder.log.isEmpty)
+    }
+
+    @Test("导航轻扫：向上、向右到下一页，向下、向左到上一页；到头时不动；从右到左时相反")
+    func navigationGesture() {
+        let (grid, recorder) = makeRecordedGrid()
+        gesture(grid, type: 16, direction: 2)
+        #expect(grid.currentPageIndex == 0)
+        gesture(grid, type: 16, direction: 1)
+        #expect(grid.currentPageIndex == 1)
+        gesture(grid, type: 16, direction: 8)
+        #expect(grid.currentPageIndex == 2)
+        gesture(grid, type: 16, direction: 1)
+        #expect(grid.currentPageIndex == 2)
+        gesture(grid, type: 16, direction: 4)
+        #expect(grid.currentPageIndex == 1)
+        #expect(recorder.log == ["handler will page 1, at 0", "handler did page 1, at 1536",
+                                 "handler will page 2, at 1536", "handler did page 2, at 3072",
+                                 "handler will page 1, at 3072", "handler did page 1, at 1536"])
+        let (rtl, _) = makeRecordedGrid(rtl: true)
+        gesture(rtl, type: 16, direction: 1)
+        #expect(rtl.currentPageIndex == 0)
+        gesture(rtl, type: 16, direction: 2)
+        #expect(rtl.currentPageIndex == 1)
+    }
+
+    @Test("经分发器：主网格空白处上方的滚轮事件和手势事件送到 ECSBLayer，覆盖层不关闭")
+    func scrollThroughDispatcher() async {
+        let window = makeWindow()
+        let recorder = PageChangeRecorder(count: 3)
+        let (grid, _) = makeGrid(pages: 3, source: recorder)
+        recorder.grid = grid
+        let top = CALayer()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        top.frame = window.layer.bounds
+        top.addSublayer(grid.layer)
+        window.layer.addSublayer(top)
+        CATransaction.commit()
+        CATransaction.flush()
+        defer { top.removeFromSuperlayer() }
+        let handler = RecordingHandler(layer: top)
+        let controller = ECModalEventController()
+        controller.addHandler(handler, externalEventSource: true, usingMouseHysteresis: true)
+        // 60 below the top of the grid, which spans y 101...960 of the handler layer.
+        let frame = window.frame()
+        let point = CGPoint(x: frame.minX + 1000, y: frame.minY + frame.height - 1 - 900)
+        func send(_ event: CGEvent) {
+            var windows = [window]
+            var layers = [top]
+            controller.handleEvent(event, windows: &windows, topLayers: &layers, windowCount: 1)
+        }
+        send(scrollEvent(dy: -1, at: point))
+        #expect(grid.layer.scrollValue == 2)
+        await waitForWheelTimer()
+        #expect(grid.currentPageIndex == 1)
+        send(gestureEvent(type: 16, direction: 1, at: point))
+        #expect(grid.currentPageIndex == 2)
+        #expect(handler.calls.isEmpty)
+        #expect(!recorder.log.contains("cancel"))
+    }
+}
 
 /// A data source that records the page changes it is told about and the cancels, with where the
 /// scroll layer is at that moment.
