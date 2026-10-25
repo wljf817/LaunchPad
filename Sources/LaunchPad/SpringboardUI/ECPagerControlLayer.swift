@@ -1,11 +1,11 @@
 import QuartzCore
 
 /// A pager's page indicator (REF-ARCH-007, REF-PAGING-003): one dot per page in a row centered in
-/// it, the current page's dot in the on state. Its pager layer places and hides it. Clicking a dot
-/// comes with 2.1.2.
+/// it, the current page's dot in the on state. Its pager layer places and hides it. It handles the
+/// dots' events: a click on a dot switches to its page (REF-PAGING-004).
 @MainActor
 @objc(ECPagerControlLayer)
-final class ECPagerControlLayer: CALayer {
+final class ECPagerControlLayer: CALayer, ECEventHandlingDelegate {
     weak var _pager: ECPager?
     var _indicatorLayers = NSMutableArray(capacity: 0)
     var _layoutRTL = false
@@ -75,5 +75,28 @@ final class ECPagerControlLayer: CALayer {
             indicator.layout()
             x += step
         }
+    }
+
+    // MARK: - ECEventHandlingDelegate (REF-PAGING-004)
+
+    /// Takes the press on a dot, so the overlay stays open and the dot gets the drag and the release
+    /// wherever they happen (REF-OVERLAY-009).
+    @objc(leftMouseDown:in:)
+    func leftMouseDown(_ event: ECEvent, in layer: CALayer?) -> Bool {
+        true
+    }
+
+    @objc(leftMouseDragged:in:)
+    func leftMouseDragged(_ event: ECEvent, in layer: CALayer?) -> Bool {
+        false
+    }
+
+    /// Switches the pager to the pressed dot's page.
+    @objc(leftMouseUp:in:)
+    func leftMouseUp(_ event: ECEvent, in layer: CALayer?) -> Bool {
+        if let indicator = layer as? ECPagerIndicatorLayer {
+            _pager?.currentPageIndex = indicator.index
+        }
+        return false
     }
 }

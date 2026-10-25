@@ -451,6 +451,86 @@ struct PagingTests {
         #expect(controller.animations == [true, false])
         #expect(grid.currentPageIndex == 1)
     }
+
+    // MARK: - Clicking a dot (REF-PAGING-004)
+
+    /// The main grid of three pages in a window, under a dispatcher's handler layer, and a function
+    /// that sends a mouse event at a point of that layer (REF-OVERLAY-009).
+    func makeClickableGrid() -> (ECSBSpringboard, PageChangeRecorder, (CGEventType, CGPoint) -> Void) {
+        let window = makeWindow()
+        let recorder = PageChangeRecorder(count: 3)
+        let (grid, _) = makeGrid(pages: 3, source: recorder)
+        recorder.grid = grid
+        let top = CALayer()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        top.frame = window.layer.bounds
+        top.addSublayer(grid.layer)
+        window.layer.addSublayer(top)
+        CATransaction.commit()
+        CATransaction.flush()
+        let handler = RecordingHandler(layer: top)
+        let controller = ECModalEventController()
+        controller.addHandler(handler, externalEventSource: true, usingMouseHysteresis: true)
+        let send = { (type: CGEventType, point: CGPoint) in
+            let frame = window.frame()
+            let global = CGPoint(x: frame.minX + point.x, y: frame.minY + frame.height - 1 - point.y)
+            var windows = [window]
+            var layers = [top]
+            controller.handleEvent(mouseEvent(type, at: global), windows: &windows, topLayers: &layers, windowCount: 1)
+            withExtendedLifetime(handler) {}
+        }
+        return (grid, recorder, send)
+    }
+
+    /// The center of dot `index` in the handler layer: the grid at y 101, the page indicator 11 above
+    /// it, the dots 15 high (REF-PAGING-003).
+    func dotCenter(_ grid: ECSBSpringboard, _ index: Int) -> CGPoint {
+        CGPoint(x: dots(grid)[index].frame.midX, y: 101 + 11 + 7.5)
+    }
+
+    @Test("点第二个圆点换到第二页，覆盖层不关闭")
+    func clickDot() {
+        let (grid, recorder, send) = makeClickableGrid()
+        defer { grid.layer.superlayer?.removeFromSuperlayer() }
+        send(.leftMouseDown, dotCenter(grid, 1))
+        #expect(grid.currentPageIndex == 0)
+        send(.leftMouseUp, dotCenter(grid, 1))
+        #expect(grid.currentPageIndex == 1)
+        #expect(recorder.log == ["handler will page 1, at 0", "handler did page 1, at 1536"])
+    }
+
+    @Test("点当前页的圆点不发换页回调，覆盖层不关闭")
+    func clickCurrentDot() {
+        let (grid, recorder, send) = makeClickableGrid()
+        defer { grid.layer.superlayer?.removeFromSuperlayer() }
+        send(.leftMouseDown, dotCenter(grid, 0))
+        send(.leftMouseUp, dotCenter(grid, 0))
+        #expect(grid.currentPageIndex == 0)
+        #expect(recorder.log.isEmpty)
+    }
+
+    @Test("点两个圆点之间与点空白处一样关闭")
+    func clickBetweenDots() {
+        let (grid, recorder, send) = makeClickableGrid()
+        defer { grid.layer.superlayer?.removeFromSuperlayer() }
+        let between = CGPoint(x: dots(grid)[0].frame.maxX + 2.5, y: 101 + 11 + 7.5)
+        send(.leftMouseDown, between)
+        send(.leftMouseUp, between)
+        #expect(grid.currentPageIndex == 0)
+        #expect(recorder.log == ["cancel"])
+    }
+
+    @Test("在第三个圆点上按下、拖到别处松开，换到第三页")
+    func dragOffDot() {
+        let (grid, recorder, send) = makeClickableGrid()
+        defer { grid.layer.superlayer?.removeFromSuperlayer() }
+        send(.leftMouseDown, dotCenter(grid, 2))
+        send(.leftMouseDragged, CGPoint(x: 400, y: 500))
+        send(.leftMouseUp, CGPoint(x: 400, y: 500))
+        #expect(grid.currentPageIndex == 2)
+        #expect(recorder.log == ["handler will page 2, at 0", "handler did page 2, at 3072"])
+    }
 }
 
 /// A data source that records the page changes it is told about and the cancels, with where the
