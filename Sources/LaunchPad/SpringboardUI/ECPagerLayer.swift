@@ -7,6 +7,9 @@ import QuartzCore
 class ECPagerLayer: CALayer, ECEventHandling {
     weak var pager: ECPager?
     @objc let scrollLayer = CAScrollLayer()
+    /// The page indicator (REF-PAGING-003). Set once at initialization; copies made by Core Animation
+    /// share it.
+    @objc nonisolated(unsafe) let controlLayer: ECPagerControlLayer
     // REF-GRID-007: 10 on each side until the controller sets them.
     @objc var leftMargin: CGFloat = 10
     @objc var rightMargin: CGFloat = 10
@@ -14,8 +17,8 @@ class ECPagerLayer: CALayer, ECEventHandling {
     @objc var bottomMargin: CGFloat = 10
     /// The page shown; 0 until paging (phase 2).
     @objc private(set) var currentPageIndex: UInt = 0
-    /// 2 for the main grid (REF-GRID-007).
-    @objc private(set) var pagerControlVisibility = 2
+    /// When the page indicator shows (REF-PAGING-003); 2 for the main grid.
+    @objc var pagerControlVisibility = 2
     var layoutRTL = false
     /// Where the left button was pressed, and the last location and time seen (research paper §4).
     var startLocation: CGPoint = .zero
@@ -25,20 +28,22 @@ class ECPagerLayer: CALayer, ECEventHandling {
 
     @objc(initWithPager:layoutRTL:)
     required init(pager: ECPager?, layoutRTL: Bool) {
+        controlLayer = ECPagerControlLayer(pager: pager, layoutRTL: layoutRTL)
         super.init()
         masksToBounds = true
         self.pager = pager
         self.layoutRTL = layoutRTL
         scrollLayer.scrollMode = .horizontally
-        sublayers = [scrollLayer]
+        sublayers = [scrollLayer, controlLayer]
     }
 
     nonisolated override init(layer: Any) {
+        controlLayer = (layer as! ECPagerLayer).controlLayer
         super.init(layer: layer)
     }
 
     nonisolated required init?(coder: NSCoder) {
-        super.init(coder: coder)
+        nil
     }
 
     // MARK: - Events (research paper §4)

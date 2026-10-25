@@ -78,6 +78,7 @@ class Springboard: NSObject, ECModalEventHandler, ECEventHandlingDelegate, ECSBD
         springboard = ECSBSpringboard(handler: self, numberOfRowsPerPage: springboardRows,
                                       numberOfColumnsPerPage: springboardColumns,
                                       scaleFactor: Float(Self.scaleFactor(of: display)), layoutRTL: layoutRightToLeft)
+        springboard.pagerControlVisibility = 2  // REF-PAGING-003
         // REF-GRID-005: read once, default 0, not clamped.
         springboard.layer.zoomStyle = Int((UserDefaults.standard.object(forKey: "springboard-zoom-style") as? NSNumber)?.int32Value ?? 0)
         layer.addSublayer(springboard.layer)

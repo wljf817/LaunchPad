@@ -24,7 +24,13 @@ struct GridTreeTests {
         let pagerLayer = grid.layer
         #expect(springboard.layer.sublayers?.map(ObjectIdentifier.init) ==
                     [ObjectIdentifier(springboard.desktopContainerLayer), ObjectIdentifier(pagerLayer)])
-        #expect(pagerLayer.sublayers?.map(ObjectIdentifier.init) == [ObjectIdentifier(pagerLayer.scrollLayer)])
+        #expect(pagerLayer.sublayers?.map(ObjectIdentifier.init) ==
+                    [ObjectIdentifier(pagerLayer.scrollLayer), ObjectIdentifier(pagerLayer.controlLayer)])
+        // REF-PAGING-003: one dot per page, each with its dot layer.
+        #expect(pagerLayer.controlLayer.sublayers?.map(ObjectIdentifier.init) ==
+                    pagerLayer.controlLayer.indicatorLayers.map { ObjectIdentifier($0 as AnyObject) })
+        #expect(pagerLayer.controlLayer.indicatorLayers.count == 2)
+        #expect((pagerLayer.controlLayer.indicatorLayers as! [CALayer]).allSatisfy { $0.sublayers?.count == 1 })
         #expect(!pagerLayer.masksToBounds && !pagerLayer.scrollLayer.masksToBounds)
         #expect(!pagerLayer.isHidden)
 

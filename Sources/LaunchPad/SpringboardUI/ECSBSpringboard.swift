@@ -69,6 +69,12 @@ final class ECSBSpringboard: NSObject, ECPagerSource, ECSBGridActionHandling, EC
         _pager
     }
 
+    /// The pager's (REF-PAGING-003).
+    @objc var pagerControlVisibility: Int {
+        get { _pager.pagerControlVisibility }
+        set { _pager.pagerControlVisibility = newValue }
+    }
+
     @objc var eventHandler: ECSBEventHandler {
         _eventHandler
     }

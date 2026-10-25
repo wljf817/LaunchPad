@@ -31,6 +31,12 @@ class ECPager: NSObject {
         _layer.currentPageIndex
     }
 
+    /// The pager layer's (REF-PAGING-003).
+    @objc var pagerControlVisibility: Int {
+        get { _layer.pagerControlVisibility }
+        set { _layer.pagerControlVisibility = newValue }
+    }
+
     @objc func pagerLayerClass() -> ECPagerLayer.Type {
         ECPagerLayer.self
     }

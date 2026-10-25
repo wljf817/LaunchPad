@@ -121,6 +121,16 @@ class ECSBLayer: ECPagerLayer, ECEventHandlingDelegate {
         // Right to left, an unsigned page count less one less the current page (REF-GRID-007).
         let index = layoutRTL ? UInt(bitPattern: wanted) &+ ~currentPageIndex : currentPageIndex
         scrollLayer.scroll(to: CGPoint(x: bounds.width * CGFloat(index), y: 0))
+        // REF-PAGING-003: hidden with visibility 1, or 2 or 3 and one page; otherwise while a folder is
+        // shown (phase 5). Across the grid, 15 high, centered on half the bottom margin as set.
+        let disabled = disableActions()
+        controlLayer.isHidden = pagerControlVisibility == 1 || (pagerControlVisibility & ~1 == 2 && wanted == 1)
+        let y = CGFloat(Int(bottomMargin * 0.5 - 7.5))
+        controlLayer.frame = CGRect(x: 0, y: 0 <= y ? y : 0, width: bounds.width, height: 15)
+        controlLayer.layout()
+        if disabled {
+            CATransaction.setDisableActions(false)
+        }
     }
 
     /// The icon size and the folder's mini icon size for the main grid (REF-GRID-006): the margins
