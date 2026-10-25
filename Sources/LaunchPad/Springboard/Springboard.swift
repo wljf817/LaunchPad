@@ -987,15 +987,27 @@ class Springboard: NSObject, ECModalEventHandler, ECEventHandlingDelegate, ECSBD
     }
 }
 
-/// Columns and rows of a page: preferences read once per process, each clamped to 2...100
-/// (REF-LAYOUT-006).
-@MainActor let springboardColumns = pageDimension("springboard-columns", default: 7)
-@MainActor let springboardRows = pageDimension("springboard-rows", default: 5)
+/// Preferences read together once per process, when the first of them is needed: whether the scroll
+/// wheel and gestures scroll the other way (REF-PAGING-006), and the columns and rows of a page, each
+/// clamped to 2...100 (REF-LAYOUT-006). The original's debug borders preference read there is not
+/// (research paper §15).
+@MainActor let springboardGlobals = (reverseScrollGesture: boolPreference("springboard-reverse-scroll-gesture", default: true),  // REF-PAGING-006
+                                     columns: pageDimension("springboard-columns", default: 7),
+                                     rows: pageDimension("springboard-rows", default: 5))
+@MainActor var springboardReverseScrollGesture: Bool { springboardGlobals.reverseScrollGesture }
+@MainActor var springboardColumns: UInt { springboardGlobals.columns }
+@MainActor var springboardRows: UInt { springboardGlobals.rows }
 
 @MainActor
 func pageDimension(_ key: String, default value: Int32) -> UInt {
     let number = (UserDefaults.standard.object(forKey: key) as? NSNumber)?.int32Value ?? value
     return number > 1 ? UInt(min(number, 100)) : 2  // REF-LAYOUT-006
+}
+
+/// A boolean preference; a value that is not a number counts as unset (REF-PAGING-006).
+@MainActor
+func boolPreference(_ key: String, default value: Bool) -> Bool {
+    (UserDefaults.standard.object(forKey: key) as? NSNumber)?.boolValue ?? value
 }
 
 /// Whether the layout is right to left: read once at startup, before the controller is created, and

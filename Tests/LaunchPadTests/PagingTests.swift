@@ -791,7 +791,23 @@ struct PagingTests {
         #expect(actions.performed.isEmpty)
         #expect(actions.cancelled == 0)
     }
-}
+
+    // MARK: - Scroll wheel and gestures (REF-PAGING-006)
+
+    @Test("反转偏好的读法：没设、不是数时为真，设为假时为假；默认的进程里为真")
+    func reversePreference() {
+        let key = "test-springboard-reverse-scroll-gesture"
+        defer { UserDefaults.standard.removeObject(forKey: key) }
+        UserDefaults.standard.removeObject(forKey: key)
+        #expect(boolPreference(key, default: true))
+        UserDefaults.standard.set("NO", forKey: key)
+        #expect(boolPreference(key, default: true))
+        UserDefaults.standard.set(false, forKey: key)
+        #expect(!boolPreference(key, default: true))
+        UserDefaults.standard.set(1, forKey: key)
+        #expect(boolPreference(key, default: false))
+        #expect(springboardReverseScrollGesture)
+    }}
 
 /// A data source that records the page changes it is told about and the cancels, with where the
 /// scroll layer is at that moment.
