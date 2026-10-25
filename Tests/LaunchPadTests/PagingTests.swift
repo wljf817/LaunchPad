@@ -92,8 +92,9 @@ struct PagingTests {
 
     /// A main grid of `pages` empty pages laid out with the original's default geometry at the first
     /// open (REF-GRID-004, REF-GRID-005).
-    func makeGrid(pages: Int, rtl: Bool = false, visibility: Int = 2) -> (ECSBSpringboard, PageSource) {
-        let source = PageSource(count: pages)
+    func makeGrid(pages: Int, rtl: Bool = false, visibility: Int = 2,
+                  source: PageSource? = nil) -> (ECSBSpringboard, PageSource) {
+        let source = source ?? PageSource(count: pages)
         let grid = ECSBSpringboard(handler: source, numberOfRowsPerPage: 5, numberOfColumnsPerPage: 7, scaleFactor: 1,
                                    layoutRTL: rtl)
         grid.pagerControlVisibility = visibility
@@ -202,11 +203,220 @@ struct PagingTests {
         #expect(grid.pager.pagerControlVisibility == 3)
         #expect(grid.layer.pagerControlVisibility == 3)
     }
+
+    // MARK: - Current page and scrolling (REF-PAGING-001, REF-PAGING-002)
+
+    @Test("换到另一页：当前页、滚动终点、圆点的状态和「最近看过」")
+    func switchPage() {
+        let (grid, _) = makeGrid(pages: 3)
+        #expect(grid.currentPageIndex == 0)
+        grid.currentPageIndex = 1
+        #expect(grid.currentPageIndex == 1)
+        #expect(grid.pager.currentPageIndex == 1 && grid.layer.currentPageIndex == 1)
+        #expect(grid.layer.scrollLayer.bounds.minX == 1536)
+        #expect(dots(grid).map(\.state) == [0, 1, 0])
+        #expect((grid.pager.pages as! [ECSBPage]).map(\.recentlyViewed) == [false, true, false])
+        #expect(grid.currentPage === grid.pager.pages[1] as AnyObject)
+        #expect(grid.pager.currentPage === grid.pager.pages[1] as AnyObject)
+        grid.currentPageIndex = 2
+        #expect(grid.layer.scrollLayer.bounds.minX == 3072)
+        #expect(dots(grid).map(\.state) == [0, 0, 1])
+    }
+
+    @Test("从右到左时滚动终点按镜像的页序号")
+    func switchPageRightToLeft() {
+        let (grid, _) = makeGrid(pages: 3, rtl: true)
+        #expect(grid.layer.scrollLayer.bounds.minX == 3072)
+        grid.currentPageIndex = 2
+        #expect(grid.layer.scrollLayer.bounds.minX == 0)
+        grid.currentPageIndex = 1
+        #expect(grid.layer.scrollLayer.bounds.minX == 1536)
+        #expect(dots(grid).map(\.state) == [0, 1, 0])
+    }
+
+    @Test("设为当前页时只滚回原位")
+    func samePage() {
+        let (grid, _) = makeGrid(pages: 3)
+        grid.currentPageIndex = 1
+        grid.layer.scrollLayer.scroll(to: CGPoint(x: 100, y: 0))
+        grid.currentPageIndex = 1
+        #expect(grid.currentPageIndex == 1)
+        #expect(grid.layer.scrollLayer.bounds.minX == 1536)
+    }
+
+    @Test("超出页数时不变；没有页时设 0 记为 0")
+    func pastEnd() {
+        let (two, _) = makeGrid(pages: 2)
+        two.currentPageIndex = 2
+        #expect(two.currentPageIndex == 0)
+        #expect(two.layer.scrollLayer.bounds.minX == 0)
+        let (none, _) = makeGrid(pages: 0)
+        none.layer._currentPageIndex = 3
+        none.currentPageIndex = 1
+        #expect(none.currentPageIndex == 3)
+        none.currentPageIndex = 0
+        #expect(none.currentPageIndex == 0)
+        #expect(none.currentPage == nil)
+    }
+
+    @Test("pager 禁止滚动时设当前页和滚动值都不动")
+    func disableScrolling() {
+        let (grid, _) = makeGrid(pages: 3)
+        #expect(grid.pager.disableScrolling == false)
+        grid.pager.disableScrolling = true
+        grid.currentPageIndex = 1
+        grid.layer.scrollValue = 500
+        #expect(grid.currentPageIndex == 0)
+        #expect(grid.layer.scrollValue == 0)
+    }
+
+    @Test("滚动值超出第一页左边或最后一页右边的部分只走四分之一")
+    func scrollValueBeyondEnds() {
+        let (grid, _) = makeGrid(pages: 3)
+        grid.layer.scrollValue = 1000
+        #expect(grid.layer.scrollValue == 1000)
+        grid.layer.scrollValue = -100
+        #expect(grid.layer.scrollValue == -25)
+        grid.layer.scrollValue = 3172
+        #expect(grid.layer.scrollValue == 3097)
+        #expect(grid.currentPageIndex == 0)
+    }
+
+    @Test("重建后滚动值和当前页都是 0，不发换页回调")
+    func invalidate() {
+        let recorder = PageChangeRecorder(count: 3)
+        let (grid, _) = makeGrid(pages: 3, source: recorder)
+        grid.currentPageIndex = 2
+        grid.layer.scrollValue = 700
+        recorder.log.removeAll()
+        grid.invalidate()
+        #expect(grid.currentPageIndex == 0)
+        #expect(grid.layer.scrollValue == 0)
+        #expect(recorder.log.isEmpty)
+    }
+
+    @Test("翻页时长：没设偏好时 0.5，第一次读到的值之后不再读，读到负数时下次重读，慢放时 5")
+    func scrollDuration() {
+        let key = "springboard-page-duration"
+        let defaults = UserDefaults.standard
+        defer {
+            defaults.removeObject(forKey: key)
+            springboardPageDuration = -1
+        }
+        defaults.removeObject(forKey: key)
+        springboardPageDuration = -1
+        #expect(ECPagerLayer.scrollDuration(slow: false) == 0.5)
+        defaults.set(1.5, forKey: key)
+        #expect(ECPagerLayer.scrollDuration(slow: false) == 0.5)
+
+        springboardPageDuration = -1
+        #expect(ECPagerLayer.scrollDuration(slow: false) == 1.5)
+        defaults.set(0.3, forKey: key)
+        #expect(ECPagerLayer.scrollDuration(slow: false) == 1.5)
+
+        springboardPageDuration = -1
+        defaults.set(-1, forKey: key)
+        #expect(ECPagerLayer.scrollDuration(slow: false) == -1)
+        defaults.set(0.3, forKey: key)
+        #expect(ECPagerLayer.scrollDuration(slow: false) == CFTimeInterval(Float(0.3)))
+
+        springboardPageDuration = -1
+        defaults.set("1.5", forKey: key)
+        #expect(ECPagerLayer.scrollDuration(slow: false) == 0.5)
+
+        springboardPageDuration = -1
+        defaults.set(1.5, forKey: key)
+        #expect(ECPagerLayer.scrollDuration(slow: true) == 5)
+        #expect(springboardPageDuration == -1)
+    }
+
+    func controlPoints(_ function: CAMediaTimingFunction?) -> [[Float]] {
+        guard let function else { return [] }
+        return (0..<4).map { index in
+            var point: [Float] = [0, 0]
+            function.getControlPoint(at: index, values: &point)
+            return point
+        }
+    }
+
+    @Test("换页时滚动 layer 的 bounds 和变了状态的圆点颜色在同一个动画里，时长 0.5、曲线按 REF-PAGING-002；滚回原位没有动画")
+    func scrollAnimation() throws {
+        let window = makeWindow()
+        let (grid, _) = makeGrid(pages: 3)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        window.layer.addSublayer(grid.layer)
+        CATransaction.commit()
+        CATransaction.flush()
+        UserDefaults.standard.removeObject(forKey: "springboard-page-duration")
+        springboardPageDuration = -1
+        defer {
+            grid.layer.removeFromSuperlayer()
+            springboardPageDuration = -1
+        }
+
+        let scrollLayer = grid.layer.scrollLayer
+        let before = scrollLayer.bounds
+        grid.currentPageIndex = 1
+        let animation = try #require(scrollLayer.animation(forKey: "bounds") as? CABasicAnimation)
+        #expect(animation.duration == 0.5)
+        let points = controlPoints(animation.timingFunction)
+        #expect(points[0] == [0, 0] && points[3] == [1, 1])
+        // REF-PAGING-002: single precision 0x3EB78184 and 0x3F803E42.
+        #expect(points[1] == [0, 0])
+        #expect(points[2].map(\.bitPattern) == [0x3EB7_8184, 0x3F80_3E42])
+        #expect((animation.fromValue as? NSValue)?.rectValue == before)
+        #expect(scrollLayer.bounds == CGRect(x: 1536, y: 0, width: before.width, height: before.height))
+
+        let inner = dots(grid).map { $0.sublayers![0] }
+        for changed in [inner[0], inner[1]] {
+            let color = try #require(changed.animation(forKey: "backgroundColor") as? CABasicAnimation)
+            #expect(color.duration == 0.5)
+            #expect(controlPoints(color.timingFunction) == points)
+        }
+        #expect(inner[2].animation(forKey: "backgroundColor") == nil)
+
+        scrollLayer.removeAllAnimations()
+        inner.forEach { $0.removeAllAnimations() }
+        grid.currentPageIndex = 1
+        #expect(scrollLayer.animation(forKey: "bounds") == nil)
+        #expect(inner.allSatisfy { $0.animation(forKey: "backgroundColor") == nil })
+    }
+}
+
+/// A data source that records the page changes it is told about and the cancels, with where the
+/// scroll layer is at that moment.
+@MainActor
+final class PageChangeRecorder: PageSource, ECSBDelegate, ECSBActionHandling {
+    var log: [String] = []
+    weak var grid: ECSBSpringboard?
+
+    var scroll: CGFloat {
+        grid?.layer.scrollLayer.bounds.minX ?? -1
+    }
+
+    func describe(_ page: AnyObject?) -> String {
+        "page \(pages.firstIndex { $0 === page }.map(String.init) ?? "?")"
+    }
+
+    func willChangeToPage(_ page: AnyObject?) {
+        log.append("handler will \(describe(page)), at \(Int(scroll))")
+    }
+
+    func didChangeToPage(_ page: AnyObject?) {
+        log.append("handler did \(describe(page)), at \(Int(scroll))")
+    }
+
+    func performAction(forItem item: AnyObject?, with event: ECEvent?, sender: AnyObject?) {}
+
+    func cancelAction(with event: ECEvent?, sender: AnyObject?) {
+        log.append("cancel")
+    }
 }
 
 /// `count` empty pages, as the layout root's children.
 @MainActor
-final class PageSource: NSObject, ECSBDataSource {
+class PageSource: NSObject, ECSBDataSource {
     var count: Int
     var pages: [NSObject] = []
 

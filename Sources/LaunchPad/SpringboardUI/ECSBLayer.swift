@@ -64,6 +64,20 @@ class ECSBLayer: ECPagerLayer, ECEventHandlingDelegate {
         return (UInt(bitPattern: zoomStyle - 1) < 2 ? widened : bottomMargin).rounded(.down)
     }
 
+    /// As the pager layer's, then marks the new current page as recently viewed; without a pager
+    /// nothing changes (REF-PAGING-001).
+    @objc(setCurrentPageIndex:)
+    override func setCurrentPageIndex(_ index: UInt) {
+        guard let pager, !pager.disableScrolling else { return }
+        let pages = pager.pages
+        if index < UInt(pages.count) {
+            super.setCurrentPageIndex(index)
+            (pages[Int(index)] as? ECSBPage)?.recentlyViewed = true
+        } else if pages.count == 0, index == 0 {
+            super.setCurrentPageIndex(0)
+        }
+    }
+
     /// Makes and drops pages (REF-GRID-003), then places the scroll layer and the pages between the
     /// adjusted margins, side by side one width of this layer apart, and scrolls to the current page
     /// (REF-GRID-007).

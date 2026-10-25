@@ -1,5 +1,9 @@
 import QuartzCore
 
+/// The page scroll duration, read at the first scroll of the process and kept; read again while it is
+/// negative (REF-PAGING-002).
+@MainActor var springboardPageDuration: Float = -1
+
 /// A pager's layer: a horizontally scrolling layer holding the pages' layers side by side
 /// (REF-ARCH-007, research paper §6.2).
 @MainActor
@@ -15,8 +19,8 @@ class ECPagerLayer: CALayer, ECEventHandling {
     @objc var rightMargin: CGFloat = 10
     @objc var topMargin: CGFloat = 10
     @objc var bottomMargin: CGFloat = 10
-    /// The page shown; 0 until paging (phase 2).
-    @objc private(set) var currentPageIndex: UInt = 0
+    /// The page shown; the pager and the main grid forward to it (REF-PAGING-001).
+    var _currentPageIndex: UInt = 0
     /// When the page indicator shows (REF-PAGING-003); 2 for the main grid.
     @objc var pagerControlVisibility = 2
     var layoutRTL = false
@@ -72,7 +76,87 @@ class ECPagerLayer: CALayer, ECEventHandling {
         return true
     }
 
+    // MARK: - Current page and scrolling
+
+    @objc var currentPageIndex: UInt {
+        _currentPageIndex
+    }
+
+    /// A page within the page count other than the current one: tells the pager before and after it
+    /// scrolls there; the current page only scrolls back into place. Past the end only 0 is kept, for a
+    /// pager without pages. Nothing changes while the pager disables scrolling (REF-PAGING-001).
+    @objc(setCurrentPageIndex:)
+    func setCurrentPageIndex(_ index: UInt) {
+        guard !(pager?.disableScrolling ?? false) else { return }
+        guard index < UInt(pager?.pages.count ?? 0) else {
+            if index == 0 {
+                _currentPageIndex = 0
+            }
+            return
+        }
+        guard index != _currentPageIndex else {
+            scrollToPageIndex(index)
+            return
+        }
+        pager?.willChangeToPageIndex(index)
+        _currentPageIndex = index
+        scrollToPageIndex(index)
+        pager?.didChangeToPageIndex(index)
+    }
+
+    /// Scrolls to the page, mirrored right to left, and lays out the page indicator in the same
+    /// transaction, so the pages slide and the dots recolor with one duration and curve
+    /// (REF-PAGING-002). The original's completion block only records performance marks.
+    @objc(scrollToPageIndex:)
+    func scrollToPageIndex(_ index: UInt) {
+        let count = UInt(pager?.pages.count ?? 0)
+        guard index < count else { return }
+        CATransaction.begin()
+        // REF-OVERLAY-008: slow motion only when allowed and Shift is down.
+        CATransaction.setAnimationDuration(Self.scrollDuration(slow: dockGlobals.slowMotionAllowed && ECModalEventController.shiftKeyDown()))
+        CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(controlPoints: 0, 0, 0.35841, 1.0019))  // REF-PAGING-002
+        let page = layoutRTL ? count &+ ~index : index
+        scrollLayer.scroll(to: CGPoint(x: scrollLayer.bounds.width * CGFloat(page), y: 0))
+        controlLayer.layout()
+        CATransaction.commit()
+    }
+
+    /// The page scroll duration: 5 s in slow motion; otherwise the preference, 0.5 s when unset, read
+    /// while the kept value is negative. A preference that is not a number counts as unset; it is used
+    /// in single precision, without clamping (REF-PAGING-002).
+    static func scrollDuration(slow: Bool) -> CFTimeInterval {
+        if slow {
+            return 5  // REF-PAGING-002
+        }
+        if springboardPageDuration < 0 {
+            springboardPageDuration = (UserDefaults.standard.object(forKey: "springboard-page-duration") as? NSNumber)?.floatValue ?? 0.5  // REF-PAGING-002
+        }
+        return CFTimeInterval(springboardPageDuration)
+    }
+
+    /// The scroll layer's offset. Setting it scrolls there in the caller's transaction; past the first
+    /// or the last page only a quarter of the way (REF-PAGING-002).
+    @objc var scrollValue: CGFloat {
+        get { scrollLayer.bounds.minX }
+        set {
+            guard !(pager?.disableScrolling ?? false) else { return }
+            let count = UInt(pager?.pages.count ?? 0)
+            let last = bounds.width * CGFloat(count &- 1)
+            var value = newValue
+            // REF-PAGING-002
+            if value < 0 {
+                value *= 0.25
+            } else if last < value {
+                value = last + (value - last) * 0.25
+            }
+            scrollLayer.scroll(to: CGPoint(x: value, y: 0))
+        }
+    }
+
+    /// Back to the first page without scrolling, then lays out again (REF-PAGING-001).
     @objc func invalidate() {
+        scrollValue = 0
+        setCurrentPageIndex(0)
         layout()
     }
 

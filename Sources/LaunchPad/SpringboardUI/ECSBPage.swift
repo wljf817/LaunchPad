@@ -10,6 +10,9 @@ class ECSBPage: ECPage, ECLayerSource, ECEventHandlingDelegate, ECSBGridDataSour
     var scaleFactor: Float
     var layoutRTL: Bool
     @objc var editing = false
+    /// Set on the current page when the page changes and when the overlay is shown or hidden; read
+    /// nowhere (REF-PAGING-001).
+    @objc var recentlyViewed = false
 
     @objc(initWithPager:andLayer:forIndex:withItem:scaleFactor:layoutRTL:)
     init(pager: ECPager?, layer: CALayer?, index: UInt, item: ECSBPageItem, scaleFactor: Float, layoutRTL: Bool) {

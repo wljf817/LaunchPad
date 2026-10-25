@@ -27,9 +27,22 @@ class ECPager: NSObject {
         _pages
     }
 
+    /// The pager layer's (REF-PAGING-001).
     @objc var currentPageIndex: UInt {
-        _layer.currentPageIndex
+        get { _layer.currentPageIndex }
+        set { _layer.setCurrentPageIndex(newValue) }
     }
+
+    /// Stops the current page and the scroll value from changing. Nothing sets it in the original, so
+    /// it stays NO (REF-PAGING-001).
+    @objc var disableScrolling = false
+
+    /// Sent by the pager layer before and after the current page changes; empty here (REF-PAGING-001).
+    @objc(willChangeToPageIndex:)
+    func willChangeToPageIndex(_ index: UInt) {}
+
+    @objc(didChangeToPageIndex:)
+    func didChangeToPageIndex(_ index: UInt) {}
 
     /// The pager layer's (REF-PAGING-003).
     @objc var pagerControlVisibility: Int {

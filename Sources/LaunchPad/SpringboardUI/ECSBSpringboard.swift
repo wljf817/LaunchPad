@@ -69,6 +69,19 @@ final class ECSBSpringboard: NSObject, ECPagerSource, ECSBGridActionHandling, EC
         _pager
     }
 
+    /// The pager's (REF-PAGING-001).
+    @objc var currentPageIndex: UInt {
+        get { _pager.currentPageIndex }
+        set { _pager.currentPageIndex = newValue }
+    }
+
+    /// The pager's page at the current page index; nil without pages or past the end.
+    @objc var currentPage: ECPage? {
+        let pages = _pager.pages
+        guard pages.count != 0, _pager.currentPageIndex < UInt(pages.count) else { return nil }
+        return pages[Int(_pager.currentPageIndex)] as? ECPage
+    }
+
     /// The pager's (REF-PAGING-003).
     @objc var pagerControlVisibility: Int {
         get { _pager.pagerControlVisibility }
