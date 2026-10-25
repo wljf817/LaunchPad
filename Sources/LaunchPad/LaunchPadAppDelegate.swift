@@ -1,4 +1,5 @@
 import AppKit
+import LaunchPadPrivate
 import XPC
 
 /// The background process's application delegate (app-architecture: the project's own bridging
@@ -60,6 +61,10 @@ final class LaunchPadAppDelegate: NSObject, NSApplicationDelegate {
         }
         xpc_connection_activate(listener)
         self.listener = listener
+        // As Dock's event handler does for its connection when it starts: every gesture event subtype,
+        // so that the scroll gestures reach the event dispatch (REF-OVERLAY-009). The coalescing mask
+        // it also sets is not changed.
+        CGSSetGestureEventSubmask(CGSMainConnectionID(), .max)
         // Every event AppKit dispatches, also the key events that have no key window while LaunchPad
         // has the keyboard focus without being active.
         eventMonitor = NSEvent.addLocalMonitorForEvents(matching: .any) { event in

@@ -95,6 +95,10 @@ extern CFArrayRef _Nullable CGSCopyManagedDisplaySpaces(CGSConnectionID cid) CF_
 // window of its display's current space (REF-DEV-003). 27.0.1 and 26.6.2.
 extern CFArrayRef _Nullable CGSCopySpacesForWindows(CGSConnectionID cid, int32_t mask, CFArrayRef wids) CF_RETURNS_RETAINED;
 
+// The gesture event subtypes the window server sends to the connection; Dock's event handler asks
+// for all of them (REF-OVERLAY-009). Without it the connection gets no scroll gesture events.
+extern CGError CGSSetGestureEventSubmask(CGSConnectionID cid, uint64_t mask);
+
 // Keyboard focus without activating the process (REF-OVERLAY-007).
 extern CGError CPSStealKeyFocusOnConnection(CGSConnectionID cid, uint32_t flags);
 extern CGError CPSReleaseKeyFocusOnConnection(CGSConnectionID cid);
