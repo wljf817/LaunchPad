@@ -56,6 +56,11 @@ final class ECEvent: NSObject {
         cgEvent?.flags.rawValue ?? 0
     }
 
+    /// Whether the flags hold Command, bit 0x100000 (REF-KEYBOARD-001).
+    @objc var commandKeyDown: Bool {
+        flags & 0x100000 != 0  // REF-KEYBOARD-001
+    }
+
     /// Integer field 78: the character of a key event, for example 0x1b for Escape (REF-OVERLAY-009).
     @objc var keyData: UInt16 {
         field(78)

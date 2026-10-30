@@ -122,7 +122,8 @@ protocol ECEventHandlingDelegate: NSObjectProtocol {}
 
 /// The controller as the delegate of the grid components. The pager tells it when editing begins and
 /// ends; no class of the original implements either method (research paper §5.9). It also tells it
-/// before and after the current page changes, with the model page (REF-PAGING-001).
+/// before and after the current page changes, with the model page (REF-PAGING-001), and before and
+/// after the selected item changes, with the two model items (REF-KEYBOARD-003).
 @MainActor
 @objc(ECSBDelegate)
 protocol ECSBDelegate: NSObjectProtocol {
@@ -134,6 +135,23 @@ protocol ECSBDelegate: NSObjectProtocol {
 
     @objc optional func didBeginEditing()
     @objc optional func didEndEditing()
+
+    @objc(selectionWillChangeFromItem:toItem:inPager:)
+    optional func selectionWillChange(fromItem oldItem: AnyObject?, toItem newItem: AnyObject?, inPager pager: AnyObject?)
+
+    @objc(selectionDidChangeFromItem:toItem:inPager:)
+    optional func selectionDidChange(fromItem oldItem: AnyObject?, toItem newItem: AnyObject?, inPager pager: AnyObject?)
+}
+
+/// What moves the selection with the navigation keys: the type is Up 0, Down 1, Left 2, Right 3,
+/// next page 4, previous page 5, Home 6, End 7, Page Up 8, Page Down 9; the event is nil when the
+/// navigation does not come from a key (REF-KEYBOARD-001, REF-KEYBOARD-002). The optional
+/// `selectedIndex` is not used by the main grid.
+@MainActor
+@objc(ECKeyboardNavigating)
+protocol ECKeyboardNavigating: NSObjectProtocol {
+    @objc(navigate:withEvent:)
+    func navigate(_ type: Int64, with event: ECEvent?) -> Bool
 }
 
 /// The controller as the handler of the grid's item actions.
