@@ -7,5 +7,5 @@ DerivedData/
 /.vscode/
 .netrc
 
-# Local-only reverse-engineering material (clean room)
-/research/
+/scripts/
+/tools/
