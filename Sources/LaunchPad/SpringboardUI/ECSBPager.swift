@@ -169,7 +169,7 @@ class ECSBPager: ECPager {
     /// item of the page it left; on the first or the last page, or while the pages cannot scroll,
     /// Command-Left and Command-Right move the selection as Left and Right do.
     @objc(navigate:withEvent:)
-    func navigate(_ type: Int64, with event: ECEvent?) -> Bool {
+    override func navigate(_ type: Int64, with event: ECEvent?) -> Bool {
         guard eventHandler?.dragging != true else { return false }
         let layoutRTL = layoutRTL
         let count = pagerSource?.numberOfPages(for: self) ?? 0

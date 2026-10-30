@@ -986,6 +986,28 @@ struct KeyboardNavigationTests {
         scrollLayer.removeAllAnimations()
     }
 
+    @Test("ECPager 的导航：→ 到下一页、← 到上一页，两端和其他类型返回 NO（REF-KEYBOARD-002）")
+    func basePagerNavigation() {
+        let source = FixedPagerSource(count: 3)
+        let pager = ECPager(pagerSource: source, layoutRTL: false)
+        for index in 0..<3 {
+            pager.pages.add(ECPage(pager: pager, layer: nil, index: UInt(index), items: nil))
+        }
+        #expect(!pager.navigate(navigateLeft, with: nil))
+        #expect(pager.navigate(navigateRight, with: nil))
+        #expect(pager.currentPageIndex == 1)
+        #expect(pager.navigate(navigateRight, with: nil))
+        #expect(!pager.navigate(navigateRight, with: nil))
+        #expect(pager.currentPageIndex == 2)
+        #expect(pager.navigate(navigateLeft, with: nil))
+        #expect(pager.currentPageIndex == 1)
+        for type: Int64 in [0, 1, 4, 5, 6, 7, 8, 9] {
+            #expect(!pager.navigate(type, with: nil))
+        }
+        #expect(pager.currentPageIndex == 1)
+        #expect(!ECPager(pagerSource: FixedPagerSource(count: 0), layoutRTL: false).navigate(navigateRight, with: nil))
+    }
+
     @Test("ECSBSpringboard 的导航交给 pager；Springboard 的 -navigate: 不带事件，所以 Cmd 不起作用")
     func springboardNavigation() {
         let keys = KeyGrid([35, 35, 10])
@@ -1245,4 +1267,18 @@ struct KeyRoutingTests {
             #expect(keys.pager.log == ["layer keyUp NO", "pager keyUp NO"])
         }
     }
+}
+
+/// A pager source with a fixed number of pages that makes none.
+@MainActor
+final class FixedPagerSource: NSObject, ECPagerSource {
+    let count: UInt
+
+    init(count: UInt) {
+        self.count = count
+    }
+
+    func numberOfPages(for pager: ECPager) -> UInt { count }
+    func makePage(for pager: ECPager, at index: UInt) -> ECPage? { nil }
+    func pageItems(for pager: ECPager) -> NSArray? { nil }
 }

@@ -5,7 +5,7 @@ import QuartzCore
 /// out.
 @MainActor
 @objc(ECPager)
-class ECPager: NSObject {
+class ECPager: NSObject, ECEventHandling, ECEventHandlingDelegate, ECKeyboardNavigating {
     var _layer: ECPagerLayer!
     @objc weak var pagerSource: ECPagerSource?
     var _pages = NSMutableArray(capacity: 0)
@@ -48,6 +48,24 @@ class ECPager: NSObject {
     @objc var pagerControlVisibility: Int {
         get { _layer.pagerControlVisibility }
         set { _layer.pagerControlVisibility = newValue }
+    }
+
+    /// Right goes to the next page and Left to the previous one, without a selection; any other type
+    /// does nothing (REF-KEYBOARD-002). `ECSBPager` overrides it without calling it.
+    @objc(navigate:withEvent:)
+    func navigate(_ type: Int64, with event: ECEvent?) -> Bool {
+        let count = pagerSource?.numberOfPages(for: self) ?? 0
+        let current = currentPageIndex
+        let step: Int
+        if type == 3 {
+            guard count != 0, current < count - 1 else { return false }
+            step = 1
+        } else {
+            guard type == 2, current != 0 else { return false }
+            step = -1
+        }
+        currentPageIndex = UInt(Int(currentPageIndex) + step)
+        return true
     }
 
     @objc func pagerLayerClass() -> ECPagerLayer.Type {
