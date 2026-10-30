@@ -21,6 +21,9 @@ class ECSBItemLayer: CALayer, ECSBGridItemSource {
     var _title: NSString?
     var magnified = false
     var _darkened = false
+    var _selected = false
+    /// Made by `-_makeSelectionLayer` while the item is selected (REF-KEYBOARD-004).
+    var _selectionLayer: CALayer?
     /// Keeps the grid layer from placing this item layer (research paper §5.9).
     @objc var disableLayout = false
     /// Set while the contents are being set, so that the layout runs once after them.
@@ -70,6 +73,62 @@ class ECSBItemLayer: CALayer, ECSBGridItemSource {
                 imageLayer.filters = nil
             }
         }
+    }
+
+    // MARK: - Selection (REF-KEYBOARD-004)
+
+    /// The selected look: a rounded rectangle behind the icon and the name, added and removed without
+    /// animation. Only a change does anything.
+    @objc var selected: Bool {
+        get { _selected }
+        set {
+            guard _selected != newValue else { return }
+            _selected = newValue
+            let disabled = disableActions()
+            if newValue {
+                _makeSelectionLayer()
+                if let selectionLayer = _selectionLayer {
+                    jitterLayer.insertSublayer(selectionLayer, at: 0)
+                    selectionLayer.frame = _selectionFrame()
+                    // REF-KEYBOARD-004: the icon's height times 0.15625, halves rounded toward zero.
+                    selectionLayer.cornerRadius = roundHalfTowardZero(imageLayer.frame.height * 0.15625)
+                    selectionLayer.opacity = 1
+                }
+            } else if let selectionLayer = _selectionLayer {
+                selectionLayer.opacity = 0
+                selectionLayer.removeFromSuperlayer()
+                _selectionLayer = nil
+            }
+            if disabled {
+                CATransaction.setDisableActions(false)
+            }
+        }
+    }
+
+    /// A plain layer whose generic gray is replaced at once by the material, as in the original.
+    @objc func _makeSelectionLayer() {
+        let selectionLayer = CALayer()
+        _selectionLayer = selectionLayer
+        selectionLayer.backgroundColor = CGColor(gray: 0, alpha: 0.14)  // REF-KEYBOARD-004
+        selectionLayer.setMaterialControl(3, appearance: 1)  // REF-KEYBOARD-004
+    }
+
+    /// The union of the icon and the name, outset by 5 below, 15 above and a horizontal amount that
+    /// shrinks when the name is wider than the icon (REF-KEYBOARD-004).
+    @objc func _selectionFrame() -> CGRect {
+        let image = imageLayer.frame
+        let label = labelLayer.frame
+        let dx: CGFloat
+        if label.width <= image.width {
+            dx = 15  // REF-KEYBOARD-004
+        } else if label.width >= image.width + 15 {
+            dx = 7  // REF-KEYBOARD-004
+        } else {
+            dx = 7 + max(0, 8 - ((label.width - image.width) * 0.5).rounded(.down))  // REF-KEYBOARD-004
+        }
+        var frame = image.union(label).insetBy(dx: -dx, dy: -5)  // REF-KEYBOARD-004
+        frame.size.height += 10  // REF-KEYBOARD-004
+        return frame
     }
 
     // MARK: - Visibility and purging (REF-GRID-015)
@@ -184,6 +243,11 @@ class ECSBItemLayer: CALayer, ECSBGridItemSource {
         let points = Self.iconPoints(min(bounds.width, bounds.height) - (preferred.height + 24))
         imageLayer.frame = CGRect(x: Self.centered(bounds.width * 0.5 - CGFloat(points >> 1), odd: points & 1 != 0),
                                   y: nameBottom + preferred.height, width: CGFloat(points), height: CGFloat(points))
+        // REF-KEYBOARD-004: only the frame; the corner radius is set when the item is selected.
+        let selectionFrame = _selectionFrame()
+        if let selectionLayer = _selectionLayer {
+            selectionLayer.frame = selectionFrame
+        }
         if let backdrop = _backdropLayer, let tintLayer {
             let frame = _backdropFrame()
             // REF-GRID-010: rounded to the nearest point.

@@ -14,3 +14,10 @@ func saturatingInt64(_ value: Double) -> Int64 {
     }
     return Int64(value)
 }
+
+/// A number rounded to the nearest integer, halves toward zero: ceil(x − 0.5) above 0, otherwise
+/// floor(x + 0.5). The original's own helper, used for the selection layer's corner radius
+/// (REF-KEYBOARD-004).
+func roundHalfTowardZero(_ value: Double) -> Double {
+    value > 0 ? (value - 0.5).rounded(.up) : (value + 0.5).rounded(.down)
+}
