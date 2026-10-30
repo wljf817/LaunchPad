@@ -172,6 +172,11 @@ typedef struct CAColorMatrix {
 // The "plusL" compositing filter of the loading indicator's text (REF-GRID-002).
 extern NSString * const kCAFilterPlusL;
 
+// The "plusD" compositing filter that -[CALayer setMaterialControl:appearance:] gives an item's
+// selection layer (REF-KEYBOARD-004; keyboard-nav). The string "plusD" would do the same. Exported
+// by QuartzCore with the value "plusD" on macOS 27.2 (26B123) and 26.6.2 (25G83).
+extern NSString * const kCAFilterPlusD;
+
 // The compositing filter of a folder icon's tint layer (REF-GRID-013).
 extern NSString * const kCAFilterDarkenBlendMode;
 
