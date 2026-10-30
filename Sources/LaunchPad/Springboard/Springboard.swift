@@ -596,6 +596,17 @@ class Springboard: NSObject, ECModalEventHandler, ECEventHandlingDelegate, ECSBD
         }
     }
 
+    // MARK: - Selection (REF-KEYBOARD-003)
+
+    /// Before the main grid's selected item changes: nothing, as in the original.
+    @objc(selectionWillChangeFromItem:toItem:inPager:)
+    func selectionWillChange(fromItem oldItem: AnyObject?, toItem newItem: AnyObject?, inPager pager: AnyObject?) {}
+
+    /// After the selected item changed. The accessibility notification and the zoom that follows the
+    /// new icon come with phase 6.
+    @objc(selectionDidChangeFromItem:toItem:inPager:)
+    func selectionDidChange(fromItem oldItem: AnyObject?, toItem newItem: AnyObject?, inPager pager: AnyObject?) {}
+
     // MARK: - Launching (REF-LAUNCH-002, REF-LAUNCH-003)
 
     /// The grid's action on an item: an app is launched from its icon's rectangle (REF-LAUNCH-003).

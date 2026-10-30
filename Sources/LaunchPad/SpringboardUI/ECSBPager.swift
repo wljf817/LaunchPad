@@ -85,13 +85,25 @@ class ECSBPager: ECPager {
         return index < UInt(_pages.count) ? _pages[Int(index)] as? ECSBPage : nil
     }
 
-    /// The selected item. Setting the same item does nothing; changing the selection (the handler's
-    /// selection callbacks and the item layers' selected look) comes with phase 2 (research paper §5.9).
+    /// The selected item (REF-KEYBOARD-003). Setting the same item does nothing. Otherwise the handler
+    /// is told before and after, with the two model items, when it responds; in between the old
+    /// item's layer is deselected, the new item stored and its layer selected.
     @objc var selectedItem: ECSBItem? {
         get { _selectedItem }
         set {
-            guard newValue !== _selectedItem else { return }
+            let oldItem = _selectedItem
+            guard newValue !== oldItem else { return }
+            if let handler = handler as? ECSBDelegate,
+               handler.responds(to: #selector(ECSBDelegate.selectionWillChange(fromItem:toItem:inPager:))) {
+                handler.selectionWillChange?(fromItem: oldItem?.clientItem, toItem: newValue?.clientItem, inPager: self)
+            }
+            oldItem?.itemLayer?.selected = false
             _selectedItem = newValue
+            newValue?.itemLayer?.selected = true
+            if let handler = handler as? ECSBDelegate,
+               handler.responds(to: #selector(ECSBDelegate.selectionDidChange(fromItem:toItem:inPager:))) {
+                handler.selectionDidChange?(fromItem: oldItem?.clientItem, toItem: _selectedItem?.clientItem, inPager: self)
+            }
         }
     }
 

@@ -141,9 +141,11 @@ final class ECSBSpringboard: NSObject, ECPagerSource, ECSBGridActionHandling, EC
                                     withNumberOfRows: rows, andColumns: columns)
     }
 
-    /// Rebuilds the page items from the layout and makes the pager drop and remake its pages.
+    /// Clears the selection, rebuilds the page items from the layout and makes the pager drop and remake
+    /// its pages (REF-KEYBOARD-003). Closing the shown folder comes with phase 5.
     @objc func invalidate() {
         let disabled = disableActions()
+        pager.selectedItem = nil
         var pageItems: NSMutableArray?
         if let pages = handler.value(forKey: "items", ofItem: nil, withInfo: nil) as? NSArray {
             pageItems = NSMutableArray(capacity: pages.count)
@@ -192,13 +194,21 @@ final class ECSBSpringboard: NSObject, ECPagerSource, ECSBGridActionHandling, EC
 
     @objc var visible: Bool { _visible }
 
-    /// The overlay was shown or hidden: passed on to the pager (REF-GRID-015). Clearing the selected
-    /// and dragged-over items and the pager layer's timers come with phases 2 to 4.
+    /// The overlay was shown or hidden: passed on to the pager (REF-GRID-015), then the selection is
+    /// cleared (REF-KEYBOARD-003). Clearing the dragged-over item and the pager layer's timers come with
+    /// phase 4.
     @objc(setVisible:)
     func setVisible(_ visible: Bool) {
         guard _visible != visible else { return }
         _visible = visible
         pager.setVisible(visible)
+        pager.selectedItem = nil
+    }
+
+    /// The model object of the pager's selected item (REF-KEYBOARD-003).
+    @objc var selectedItem: AnyObject? {
+        get { pager.selectedItem?.clientItem }
+        set { pager.selectedItem = item(forClientItem: newValue) }
     }
 
     @objc func layout() {

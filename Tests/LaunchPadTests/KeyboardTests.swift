@@ -249,4 +249,202 @@ struct KeyboardTests {
         itemLayer.selected = false
         #expect(itemLayer._selectionLayer == nil)
     }
+
+    // MARK: - The selected item (REF-KEYBOARD-003)
+
+    @Test("换选中项的先后：将要改变、旧项取消选中、存下新项、新项选中、已经改变；参数是模型项和 pager")
+    func selectionCallbacks() {
+        let pager = ECSBPager(pagerSource: nil, scaleFactor: 1, layoutRTL: false)
+        let recorder = SelectionRecorder(pager: pager)
+        pager.handler = recorder
+        let (a, b) = (recorder.item("A"), recorder.item("B"))
+        pager.selectedItem = a
+        #expect(recorder.log == ["will nil → A, stored nil", "A selected true, stored A", "A done, stored A",
+                                 "did nil → A, stored A"])
+        recorder.log.removeAll()
+        pager.selectedItem = b
+        #expect(recorder.log == ["will A → B, stored A", "A selected false, stored A", "A done, stored A",
+                                 "B selected true, stored B", "B done, stored B", "did A → B, stored B"])
+        recorder.log.removeAll()
+        pager.selectedItem = nil
+        #expect(recorder.log == ["will B → nil, stored B", "B selected false, stored B", "B done, stored B",
+                                 "did B → nil, stored nil"])
+        #expect(recorder.pagers.allSatisfy { $0 === pager })
+        #expect(recorder.pagers.count == 6)
+    }
+
+    @Test("设成同一项时不发回调，也不碰 item layer")
+    func sameSelection() {
+        let pager = ECSBPager(pagerSource: nil, scaleFactor: 1, layoutRTL: false)
+        let recorder = SelectionRecorder(pager: pager)
+        pager.handler = recorder
+        pager.selectedItem = nil
+        #expect(recorder.log.isEmpty)
+        let a = recorder.item("A")
+        pager.selectedItem = a
+        recorder.log.removeAll()
+        pager.selectedItem = a
+        #expect(recorder.log.isEmpty)
+        #expect(recorder.layers["A"]?.selected == true)
+    }
+
+    @Test("handler 不响应选中回调时照样换，item layer 照样选中和取消选中")
+    func selectionWithoutCallbacks() {
+        let pager = ECSBPager(pagerSource: nil, scaleFactor: 1, layoutRTL: false)
+        let recorder = SelectionRecorder(pager: pager)
+        let source = PageSource(count: 0)
+        pager.handler = source
+        let (a, b) = (recorder.item("A"), recorder.item("B"))
+        pager.selectedItem = a
+        #expect(pager.selectedItem === a)
+        #expect(recorder.layers["A"]?.selected == true)
+        pager.selectedItem = b
+        #expect(pager.selectedItem === b)
+        #expect(recorder.layers["A"]?.selected == false)
+        #expect(recorder.layers["B"]?.selected == true)
+        #expect(recorder.log == ["A selected true, stored A", "A done, stored A", "A selected false, stored A",
+                                 "A done, stored A", "B selected true, stored B", "B done, stored B"])
+        withExtendedLifetime(source) {}
+    }
+
+    @Test("ECSBSpringboard 的 selectedItem 是模型项；设模型项时找到它的 ECSBItem 交给 pager")
+    func springboardSelectedItem() {
+        let scene = SceneGrid()
+        let items = scene.page.item.items as! [ECSBItem]
+        let client = items[3].clientItem
+        scene.grid.selectedItem = client
+        #expect(scene.grid.pager.selectedItem === items[3])
+        #expect(scene.grid.selectedItem === client)
+        #expect(scene.itemLayer(3).selected)
+        let other = items[5].clientItem
+        scene.grid.selectedItem = other
+        #expect(scene.grid.pager.selectedItem === items[5])
+        #expect(scene.grid.selectedItem === other)
+        #expect(!scene.itemLayer(3).selected)
+        #expect(scene.itemLayer(5).selected)
+        scene.grid.pager.selectedItem = nil
+    }
+
+    @Test("打开、关闭、重建、换页、在图标上按下都清掉选中项并取消 item layer 的选中")
+    func selectionCleared() {
+        let scene = SceneGrid(emptyPages: 1)
+        let pager = scene.grid.pager
+        let items = scene.page.item.items as! [ECSBItem]
+        func select() {
+            pager.selectedItem = items[2]
+            #expect(scene.itemLayer(2).selected)
+        }
+        select()
+        scene.grid.setVisible(true)
+        #expect(pager.selectedItem == nil)
+        #expect(!scene.itemLayer(2).selected)
+        select()
+        scene.grid.setVisible(false)
+        #expect(pager.selectedItem == nil)
+        #expect(!scene.itemLayer(2).selected)
+
+        select()
+        scene.grid.currentPageIndex = 1
+        #expect(pager.selectedItem == nil)
+        #expect(!scene.itemLayer(2).selected)
+        scene.grid.currentPageIndex = 0
+        scene.grid.layer.scrollLayer.removeAllAnimations()
+
+        select()
+        let actions = RecordingGridActions()
+        pager.gridActionHandler = actions
+        let handler = RecordingHandler(layer: scene.top)
+        let controller = ECModalEventController.sharedController()
+        controller.addHandler(handler, externalEventSource: true, usingMouseHysteresis: true)
+        scene.send(.leftMouseDown, scene.icon(5))
+        #expect(pager.selectedItem == nil)
+        #expect(!scene.itemLayer(2).selected)
+        scene.send(.leftMouseUp, scene.icon(5))
+        controller.removeHandler(handler)
+
+        select()
+        let itemLayer = scene.itemLayer(2)
+        scene.grid.invalidate()
+        #expect(pager.selectedItem == nil)
+        #expect(!itemLayer.selected)
+    }
+
+    @Test("Springboard 响应两个选中回调，是主网格 pager 的 handler")
+    func springboardCallbacks() {
+        let controller = QuietSpringboard()
+        #expect(controller.springboard.pager.handler === controller)
+        #expect(controller.responds(to: #selector(ECSBDelegate.selectionWillChange(fromItem:toItem:inPager:))))
+        #expect(controller.responds(to: #selector(ECSBDelegate.selectionDidChange(fromItem:toItem:inPager:))))
+    }
+}
+
+/// An item layer that logs when its selected look changes, with what the pager has stored then.
+@MainActor
+final class RecordingItemLayer: ECSBItemLayer {
+    var tag = ""
+    weak var recorder: SelectionRecorder?
+
+    override var selected: Bool {
+        get { super.selected }
+        set {
+            recorder?.log.append("\(tag) selected \(newValue), stored \(recorder?.storedName ?? "?")")
+            super.selected = newValue
+            recorder?.log.append("\(tag) done, stored \(recorder?.storedName ?? "?")")
+        }
+    }
+}
+
+/// A grid handler that records the selection callbacks, and the items and layers it made.
+@MainActor
+final class SelectionRecorder: NSObject, ECSBDataSource, ECSBDelegate {
+    final class Client: NSObject {
+        let name: String
+        init(name: String) { self.name = name }
+    }
+
+    weak var pager: ECSBPager?
+    var log: [String] = []
+    var pagers: [AnyObject?] = []
+    var clients: [Client] = []
+    var items: [ECSBItem] = []
+    var layers: [String: RecordingItemLayer] = [:]
+
+    init(pager: ECSBPager) {
+        self.pager = pager
+    }
+
+    /// A grid item standing for a new model item called `name`, with a recording layer.
+    func item(_ name: String) -> ECSBItem {
+        let client = Client(name: name)
+        let item = ECSBItem()
+        item.clientItem = client
+        let itemLayer = RecordingItemLayer(scaleFactor: 1, layoutRTL: false)
+        itemLayer.tag = name
+        itemLayer.recorder = self
+        item.itemLayer = itemLayer
+        clients.append(client)
+        items.append(item)
+        layers[name] = itemLayer
+        return item
+    }
+
+    var storedName: String {
+        name(pager?.selectedItem?.clientItem)
+    }
+
+    func name(_ client: AnyObject?) -> String {
+        (client as? Client)?.name ?? "nil"
+    }
+
+    func value(forKey key: String, ofItem item: AnyObject?, withInfo info: AnyObject?) -> AnyObject? { nil }
+
+    func selectionWillChange(fromItem oldItem: AnyObject?, toItem newItem: AnyObject?, inPager pager: AnyObject?) {
+        log.append("will \(name(oldItem)) → \(name(newItem)), stored \(storedName)")
+        pagers.append(pager)
+    }
+
+    func selectionDidChange(fromItem oldItem: AnyObject?, toItem newItem: AnyObject?, inPager pager: AnyObject?) {
+        log.append("did \(name(oldItem)) → \(name(newItem)), stored \(storedName)")
+        pagers.append(pager)
+    }
 }
