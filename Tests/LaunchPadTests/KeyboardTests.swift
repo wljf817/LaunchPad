@@ -448,3 +448,318 @@ final class SelectionRecorder: NSObject, ECSBDataSource, ECSBDelegate {
         pagers.append(pager)
     }
 }
+
+// MARK: - Navigation (REF-KEYBOARD-002)
+
+/// The navigation types (REF-KEYBOARD-001).
+let navigateUp: Int64 = 0
+let navigateDown: Int64 = 1
+let navigateLeft: Int64 = 2
+let navigateRight: Int64 = 3
+
+/// The characters of the keys (REF-KEYBOARD-001).
+enum KeyCharacter {
+    static let up: Int64 = 0xF700
+    static let down: Int64 = 0xF701
+    static let left: Int64 = 0xF702
+    static let right: Int64 = 0xF703
+    static let home: Int64 = 0xF729
+    static let end: Int64 = 0xF72B
+    static let pageUp: Int64 = 0xF72C
+    static let pageDown: Int64 = 0xF72D
+    static let tab: Int64 = 0x09
+    static let enter: Int64 = 0x03
+    static let `return`: Int64 = 0x0D
+    static let escape: Int64 = 0x1B
+    static let space: Int64 = 0x20
+    static let a: Int64 = 0x61
+}
+
+/// A key event with the character given, with Command or without any modifier.
+@MainActor
+func key(_ character: Int64, command: Bool = false, down: Bool = true) -> ECEvent {
+    let cgEvent = keyEvent(0, character: character, down: down)
+    cgEvent.flags = command ? .maskCommand : []
+    return ECEvent(event: cgEvent, hitLayer: nil, hitWindow: nil, session: nil)
+}
+
+/// A main grid whose pages hold `counts` apps each, laid out as `PagingTests.makeGrid` lays out its
+/// grid, with a pager that records the key and navigation calls.
+@MainActor
+final class KeyGrid {
+    let source: KeyGridSource
+    let grid: ECSBSpringboard
+    let pager: RecordingPager
+
+    init(_ counts: [Int], rtl: Bool = false) {
+        source = KeyGridSource(counts: counts)
+        grid = ECSBSpringboard(handler: source, numberOfRowsPerPage: 5, numberOfColumnsPerPage: 7, scaleFactor: 1,
+                               layoutRTL: rtl)
+        // Wired as ECSBSpringboard's initializer wires its own pager.
+        pager = RecordingPager(pagerSource: grid, scaleFactor: 1, layoutRTL: rtl)
+        pager.gridActionHandler = grid
+        pager.handler = source
+        pager.eventHandler = grid.eventHandler
+        grid._pager = pager
+        let saved = dockBar.display
+        dockBar.display = DisplayDescriptor(notchBounds: .null)
+        grid.invalidate()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        grid.layer.frame = CGRect(x: 0, y: 101, width: 1536, height: 859)
+        (grid.leftMargin, grid.rightMargin, grid.topMargin, grid.bottomMargin) = (90, 90, 35, 37)
+        grid.zoomFactor = 0.2
+        grid.layout()
+        CATransaction.commit()
+        dockBar.display = saved
+        reset()
+    }
+
+    func page(_ index: Int) -> ECSBPage {
+        (pager.pages as! [ECSBPage])[index]
+    }
+
+    func item(_ page: Int, _ index: Int) -> ECSBItem {
+        self.page(page).item.items![index] as! ECSBItem
+    }
+
+    /// The page and the index of the selected item; nil without one.
+    var selection: [Int]? {
+        guard let selected = pager.selectedItem else { return nil }
+        for (index, page) in (pager.pages as! [ECSBPage]).enumerated() {
+            let position = page.item.items!.indexOfObjectIdentical(to: selected)
+            if position != NSNotFound {
+                return [index, position]
+            }
+        }
+        return [-1, -1]
+    }
+
+    /// Selects an item, then forgets the calls so far.
+    func select(_ page: Int, _ index: Int) {
+        pager.selectedItem = item(page, index)
+        source.selections.removeAll()
+    }
+
+    /// Moves to a page without a selected item, then forgets the calls so far.
+    func show(_ page: Int) {
+        pager.currentPageIndex = UInt(page)
+        pager.selectedItem = nil
+        reset()
+    }
+
+    func reset() {
+        pager.log.removeAll()
+        source.selections.removeAll()
+        source.actions.removeAll()
+    }
+
+    /// The item layers of a page that show the selection.
+    func selectedLayers(_ page: Int) -> [Int] {
+        (self.page(page).item.items as! [ECSBItem]).enumerated().compactMap { $1.itemLayer?.selected == true ? $0 : nil }
+    }
+}
+
+/// Pages of apps with the item counts given, as the layout root's children. It records the selection
+/// changes and the actions on items.
+@MainActor
+final class KeyGridSource: NSObject, ECSBDataSource, ECSBDelegate, ECSBActionHandling {
+    final class Node: NSObject {
+        let kind: String
+        let children: [Node]
+
+        init(_ kind: String, _ children: [Node] = []) {
+            self.kind = kind
+            self.children = children
+        }
+    }
+
+    let pages: [Node]
+    let icon = SceneDataSource.image(96)
+    var selections: [(from: AnyObject?, to: AnyObject?)] = []
+    var actions: [(item: AnyObject?, event: ECEvent?, sender: AnyObject?)] = []
+
+    init(counts: [Int]) {
+        pages = counts.map { count in Node("page", (0..<count).map { _ in Node("item") }) }
+    }
+
+    func value(forKey key: String, ofItem item: AnyObject?, withInfo info: AnyObject?) -> AnyObject? {
+        guard let node = item as? Node else {
+            return key == "items" ? pages as NSArray : nil
+        }
+        switch key {
+        case "items": return node.children as NSArray
+        case "kind": return node.kind as NSString
+        case "title": return "" as NSString
+        case "icon": return icon
+        default: return nil
+        }
+    }
+
+    func selectionDidChange(fromItem oldItem: AnyObject?, toItem newItem: AnyObject?, inPager pager: AnyObject?) {
+        selections.append((oldItem, newItem))
+    }
+
+    func performAction(forItem item: AnyObject?, with event: ECEvent?, sender: AnyObject?) {
+        actions.append((item, event, sender))
+    }
+}
+
+/// A main grid pager that logs its key and navigation calls in the order they start, each with its
+/// result, and whose layer logs its own.
+@MainActor
+final class RecordingPager: ECSBPager {
+    var log: [String] = []
+
+    func record(_ name: String, _ body: () -> Bool) -> Bool {
+        let index = log.count
+        log.append(name)
+        let result = body()
+        log[index] += result ? " YES" : " NO"
+        return result
+    }
+
+    override func pagerLayerClass() -> ECPagerLayer.Type {
+        KeyRecordingLayer.self
+    }
+}
+
+/// The pager layer of a `RecordingPager`.
+@MainActor
+final class KeyRecordingLayer: ECSBLayer {
+    var recorder: RecordingPager? {
+        pager as? RecordingPager
+    }
+
+    override func setCurrentPageIndex(_ index: UInt) {
+        recorder?.log.append("setCurrentPageIndex \(index)")
+        super.setCurrentPageIndex(index)
+    }
+}
+
+@MainActor
+@Suite(.serialized)
+struct KeyboardNavigationTests {
+    // MARK: - In a page (REF-KEYBOARD-002)
+
+    @Test("没有选中项时 → 和 ↓ 选中当前页的第一项，← 和 ↑ 选中最后一项；31 项和 35 项的页")
+    func firstKey() {
+        for count in [31, 35] {
+            let keys = KeyGrid([count])
+            for (type, expected) in [(navigateRight, 0), (navigateDown, 0), (navigateLeft, count - 1), (navigateUp, count - 1)] {
+                keys.show(0)
+                #expect(keys.page(0).navigate(type, with: nil))
+                #expect(keys.selection == [0, expected])
+                #expect(keys.source.selections.count == 1)
+                #expect(keys.selectedLayers(0) == [expected])
+            }
+        }
+    }
+
+    @Test("← 和 → 按顺序移动一项，行尾接下一行的行首，行首退回上一行的行尾")
+    func leftAndRight() {
+        for count in [31, 35] {
+            let keys = KeyGrid([count])
+            for (from, type, to) in [(6, navigateRight, 7), (27, navigateRight, 28), (7, navigateLeft, 6), (12, navigateRight, 13),
+                                     (12, navigateLeft, 11)] {
+                keys.select(0, from)
+                #expect(keys.page(0).navigate(type, with: nil))
+                #expect(keys.selection == [0, to])
+                #expect(keys.source.selections.count == 1)
+                #expect(keys.selectedLayers(0) == [to])
+            }
+        }
+    }
+
+    @Test("↓ 从第 0 项依次选中第 7、14、21、28 项，下面没有项时不变；↑ 反过来")
+    func upAndDown() {
+        for count in [31, 35] {
+            let keys = KeyGrid([count])
+            keys.select(0, 0)
+            for expected in [7, 14, 21, 28] {
+                #expect(keys.page(0).navigate(navigateDown, with: nil))
+                #expect(keys.selection == [0, expected])
+            }
+            #expect(!keys.page(0).navigate(navigateDown, with: nil))
+            #expect(keys.selection == [0, 28])
+            for expected in [21, 14, 7, 0] {
+                #expect(keys.page(0).navigate(navigateUp, with: nil))
+                #expect(keys.selection == [0, expected])
+            }
+            #expect(!keys.page(0).navigate(navigateUp, with: nil))
+            #expect(keys.selection == [0, 0])
+            #expect(keys.source.selections.count == 8)
+            // Item 27: 34 is below it only on the page of 35.
+            keys.select(0, 27)
+            #expect(keys.page(0).navigate(navigateDown, with: nil) == (count == 35))
+            #expect(keys.selection == [0, count == 35 ? 34 : 27])
+            keys.select(0, 30)
+            #expect(keys.page(0).navigate(navigateUp, with: nil))
+            #expect(keys.selection == [0, 23])
+        }
+    }
+
+    @Test("页的两端：第一项按 ← 或 ↑、最后一项按 → 都不变，返回 NO，不换页")
+    func pageEnds() {
+        for count in [31, 35] {
+            let keys = KeyGrid([count, 10])
+            for (index, type) in [(0, navigateLeft), (0, navigateUp), (count - 1, navigateRight)] {
+                keys.select(0, index)
+                #expect(!keys.page(0).navigate(type, with: nil))
+                #expect(keys.selection == [0, index])
+                #expect(keys.source.selections.isEmpty)
+                #expect(keys.pager.currentPageIndex == 0)
+            }
+        }
+    }
+
+    @Test("从右到左：没有选中项时 ← 选中第一项，再按 → 不变；← 和 → 对调，↑ 和 ↓ 不变")
+    func rightToLeft() {
+        let keys = KeyGrid([31], rtl: true)
+        #expect(keys.page(0).navigate(navigateLeft, with: nil))
+        #expect(keys.selection == [0, 0])
+        #expect(!keys.page(0).navigate(navigateRight, with: nil))
+        #expect(keys.selection == [0, 0])
+        #expect(keys.page(0).navigate(navigateLeft, with: nil))
+        #expect(keys.selection == [0, 1])
+        #expect(keys.page(0).navigate(navigateRight, with: nil))
+        #expect(keys.selection == [0, 0])
+        keys.select(0, 30)
+        #expect(!keys.page(0).navigate(navigateLeft, with: nil))
+        keys.show(0)
+        #expect(keys.page(0).navigate(navigateRight, with: nil))
+        #expect(keys.selection == [0, 30])
+        keys.show(0)
+        #expect(keys.page(0).navigate(navigateDown, with: nil))
+        #expect(keys.selection == [0, 0])
+        #expect(keys.page(0).navigate(navigateDown, with: nil))
+        #expect(keys.selection == [0, 7])
+    }
+
+    @Test("空页返回 NO；类型 4–9 返回 NO；选中项在别的页上时四个方向键返回 NO；改变选中项时返回 YES")
+    func pageResults() {
+        let empty = KeyGrid([0])
+        for type: Int64 in 0...9 {
+            #expect(!empty.page(0).navigate(type, with: nil))
+        }
+        #expect(empty.selection == nil)
+
+        let keys = KeyGrid([31, 35])
+        for type: Int64 in 4...9 {
+            keys.show(0)
+            #expect(!keys.page(0).navigate(type, with: nil))
+            #expect(keys.selection == nil)
+            keys.select(0, 10)
+            #expect(!keys.page(0).navigate(type, with: nil))
+            #expect(keys.selection == [0, 10])
+        }
+        keys.select(1, 10)
+        for type: Int64 in 0...3 {
+            #expect(!keys.page(0).navigate(type, with: nil))
+            #expect(keys.selection == [1, 10])
+        }
+        #expect(keys.source.selections.isEmpty)
+        #expect(keys.page(1).navigate(navigateRight, with: nil))
+        #expect(keys.selection == [1, 11])
+    }
+}

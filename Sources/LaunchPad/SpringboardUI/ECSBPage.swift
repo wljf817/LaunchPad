@@ -4,7 +4,7 @@ import QuartzCore
 /// item give the grid layer's item count and item layers (research paper §6.2).
 @MainActor
 @objc(ECSBPage)
-class ECSBPage: ECPage, ECLayerSource, ECEventHandlingDelegate, ECSBGridDataSource {
+class ECSBPage: ECPage, ECLayerSource, ECEventHandlingDelegate, ECKeyboardNavigating, ECSBGridDataSource {
     @objc var handler: ECSBDataSource?
     @objc var item: ECSBPageItem
     var scaleFactor: Float
@@ -84,6 +84,79 @@ class ECSBPage: ECPage, ECLayerSource, ECEventHandlingDelegate, ECSBGridDataSour
     /// Drops its item layers' icons (REF-GRID-015).
     @objc func purgeItemContents() {
         (layer as? ECSBGridLayer)?.purgeItemContents()
+    }
+
+    // MARK: - ECKeyboardNavigating
+
+    /// Moves the pager's selected item within this page and returns YES when it set one
+    /// (REF-KEYBOARD-002): Up and Down by one row of the grid layer, "back" and "forward" by one item
+    /// in the page's order, Left and Right swapped right to left. Without a selected item, Up and
+    /// "back" select the last item, Down and "forward" the first. It never leaves the page: past an
+    /// end, with no items, with the selected item on another page, or for any other type, NO.
+    @objc(navigate:withEvent:)
+    func navigate(_ type: Int64, with event: ECEvent?) -> Bool {
+        let pager = pager as? ECSBPager
+        let selected = pager?.selectedItem
+        let items = item.items
+        let count = items?.count ?? 0
+        var handled = false
+        // The index of the selected item; nil without one or when it is not on this page.
+        func selectedIndex(_ items: NSMutableArray) -> Int? {
+            guard let selected else { return nil }
+            let index = items.indexOfObjectIdentical(to: selected)
+            return index == NSNotFound ? nil : index
+        }
+        let back = {
+            guard let items, count != 0 else { return }
+            if selected == nil {
+                pager?.selectedItem = items.lastObject as? ECSBItem
+            } else {
+                guard let index = selectedIndex(items), index != 0 else { return }
+                pager?.selectedItem = items[index - 1] as? ECSBItem
+            }
+            handled = true
+        }
+        let forward = {
+            guard let items, count != 0 else { return }
+            if selected == nil {
+                pager?.selectedItem = items[0] as? ECSBItem
+            } else {
+                guard let index = selectedIndex(items), index < count - 1 else { return }
+                pager?.selectedItem = items[index + 1] as? ECSBItem
+            }
+            handled = true
+        }
+        switch type {
+        case 0:  // Up
+            guard let items, count != 0 else { return false }
+            if selected == nil {
+                pager?.selectedItem = items.lastObject as? ECSBItem
+            } else {
+                guard let index = selectedIndex(items) else { return false }
+                let above = index - ((layer as? ECGridLayer)?.columns ?? 0)
+                guard above >= 0 else { return false }
+                pager?.selectedItem = items[above] as? ECSBItem
+            }
+            handled = true
+        case 1:  // Down
+            guard let items, count != 0 else { return false }
+            if selected == nil {
+                pager?.selectedItem = items[0] as? ECSBItem
+            } else {
+                guard let index = selectedIndex(items) else { return false }
+                let below = index + ((layer as? ECGridLayer)?.columns ?? 0)
+                guard below < count else { return false }
+                pager?.selectedItem = items[below] as? ECSBItem
+            }
+            handled = true
+        case 2:  // Left
+            layoutRTL ? forward() : back()
+        case 3:  // Right
+            layoutRTL ? back() : forward()
+        default:
+            break
+        }
+        return handled
     }
 
     // MARK: - ECEventHandlingDelegate
