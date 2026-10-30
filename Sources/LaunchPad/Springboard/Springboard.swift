@@ -569,14 +569,49 @@ class Springboard: NSObject, ECModalEventHandler, ECEventHandlingDelegate, ECSBD
         return false
     }
 
-    /// Escape cancels. The grid and the text input see the key first, Return and Enter end edit mode,
-    /// and the navigation keys move the selection in later phases.
+    /// The grid sees the key first (REF-KEYBOARD-001). When it does not handle it, Return and Enter end
+    /// edit mode, Escape cancels, and while visible the arrows, Home, End, Page Up and Page Down navigate
+    /// the grid, whatever the result. In edit mode the text input of a folder title sees the key before
+    /// that (phase 5); Command-Option-Control with D, E, V, C or X come after it (phase 4). Always YES.
     @objc(keyDown:)
     func keyDown(_ event: ECEvent) -> Bool {
-        if event.keyData == 0x1b {  // Escape (REF-OVERLAY-010)
-            performCancel()
+        let handled = springboard.keyDown(event)
+        let key = event.keyData
+        if !handled {
+            switch key {
+            case 0x03, 0x0D:  // Enter, Return (REF-KEYBOARD-001)
+                if editing {
+                    editing = false
+                }
+            case 0x1B:  // Escape (REF-OVERLAY-010)
+                performCancel()
+            case 0xF700...0xF703, 0xF729, 0xF72B, 0xF72C, 0xF72D:
+                guard _visible else { break }
+                // REF-KEYBOARD-001: the navigation types.
+                let type: Int64 = switch key {
+                case 0xF700: 0  // Up
+                case 0xF701: 1  // Down
+                case 0xF702: 2  // Left
+                case 0xF703: 3  // Right
+                case 0xF729: 6  // Home
+                case 0xF72B: 7  // End
+                case 0xF72C: 8  // Page Up
+                default: 9  // Page Down
+                }
+                _ = springboard.navigate(type, with: event)
+            default:
+                break
+            }
         }
         return true
+    }
+
+    /// The grid sees the key up; in edit mode the text input of a folder title sees it next, and only
+    /// its YES is returned (phase 5). So NO until then (REF-KEYBOARD-001).
+    @objc(keyUp:)
+    func keyUp(_ event: ECEvent) -> Bool {
+        _ = springboard.keyUp(event)
+        return false
     }
 
     /// Cancels the first thing there is to cancel: here only Launchpad itself; the drag, delete mode,

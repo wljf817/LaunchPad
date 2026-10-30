@@ -626,6 +626,18 @@ final class RecordingPager: ECSBPager {
     override func navigate(_ type: Int64, with event: ECEvent?) -> Bool {
         record("pager navigate \(type)") { super.navigate(type, with: event) }
     }
+
+    override func keyDown(_ event: ECEvent) -> Bool {
+        record("pager keyDown") { super.keyDown(event) }
+    }
+
+    override func keyUp(_ event: ECEvent) -> Bool {
+        record("pager keyUp") { super.keyUp(event) }
+    }
+
+    override func performAction(_ event: ECEvent?) -> Bool {
+        record("pager performAction") { super.performAction(event) }
+    }
 }
 
 /// The pager layer of a `RecordingPager`.
@@ -638,6 +650,14 @@ final class KeyRecordingLayer: ECSBLayer {
     override func setCurrentPageIndex(_ index: UInt) {
         recorder?.log.append("setCurrentPageIndex \(index)")
         super.setCurrentPageIndex(index)
+    }
+
+    override func keyDown(_ event: ECEvent) -> Bool {
+        recorder?.record("layer keyDown") { super.keyDown(event) } ?? super.keyDown(event)
+    }
+
+    override func keyUp(_ event: ECEvent) -> Bool {
+        recorder?.record("layer keyUp") { super.keyUp(event) } ?? super.keyUp(event)
     }
 }
 
@@ -984,5 +1004,245 @@ struct KeyboardNavigationTests {
         controller.navigate(4)
         #expect(keys.pager.log == ["pager navigate 4 YES", "setCurrentPageIndex 1"])
         #expect(keys.selection == [1, 0])
+    }
+}
+
+@MainActor
+@Suite(.serialized)
+struct KeyRoutingTests {
+    /// Every key the routing tests press, with whether the grid layer keeps it (REF-KEYBOARD-001).
+    let keptKeys: [(name: String, event: () -> ECEvent, kept: Bool)] = [
+        ("Up", { key(KeyCharacter.up) }, true),
+        ("Down", { key(KeyCharacter.down) }, true),
+        ("Left", { key(KeyCharacter.left) }, true),
+        ("Right", { key(KeyCharacter.right) }, true),
+        ("Command-Up", { key(KeyCharacter.up, command: true) }, true),
+        ("Command-Left", { key(KeyCharacter.left, command: true) }, true),
+        ("Command-Right", { key(KeyCharacter.right, command: true) }, true),
+        ("Return", { key(KeyCharacter.return) }, true),
+        ("Enter", { key(KeyCharacter.enter) }, true),
+        ("Escape", { key(KeyCharacter.escape) }, true),
+        ("Tab", { key(KeyCharacter.tab) }, true),
+        ("Home", { key(KeyCharacter.home) }, false),
+        ("End", { key(KeyCharacter.end) }, false),
+        ("Page Up", { key(KeyCharacter.pageUp) }, false),
+        ("Page Down", { key(KeyCharacter.pageDown) }, false),
+        ("a", { key(KeyCharacter.a) }, false),
+        ("Command-a", { key(KeyCharacter.a, command: true) }, false),
+        ("Space", { key(KeyCharacter.space) }, false),
+    ]
+
+    /// A visible controller whose main grid is `keys`'s.
+    func makeController(_ keys: KeyGrid) -> RecordingSpringboard {
+        let controller = RecordingSpringboard()
+        controller.springboard = keys.grid
+        controller._visible = true
+        return controller
+    }
+
+    // MARK: - The grid layer (REF-KEYBOARD-001)
+
+    @Test("ECSBLayer：决定的键置位并返回 NO，其余的键（含 Home、End、翻页键、字母、空格）清掉那一位并返回 NO；抬起总是 NO")
+    func gridLayerKeys() {
+        let keys = KeyGrid([35])
+        let layer = keys.grid.layer
+        for (name, event, kept) in keptKeys {
+            layer.keyDownHandled = !kept
+            #expect(!layer.keyDown(event()), "\(name)")
+            #expect(layer.keyDownHandled == kept, "\(name)")
+            #expect(!layer.keyUp(key(Int64(event().keyData), down: false)), "\(name)")
+            #expect(layer.keyDownHandled == kept, "\(name)")
+        }
+        #expect(keys.selection == nil)
+        #expect(keys.source.actions.isEmpty)
+    }
+
+    // MARK: - The pager (REF-KEYBOARD-005)
+
+    @Test("ECSBPager：只有 Return 和 Enter 调 -performAction:；抬起总是 NO")
+    func pagerKeys() {
+        let keys = KeyGrid([35])
+        for (name, event, _) in keptKeys {
+            keys.reset()
+            let character = Int64(event().keyData)
+            let performs = character == 0x0D || character == 0x03
+            #expect(!keys.pager.keyDown(event()), "\(name)")
+            #expect(keys.pager.log == (performs ? ["pager keyDown NO", "pager performAction NO"] : ["pager keyDown NO"]),
+                    "\(name)")
+            #expect(!keys.pager.keyUp(key(character, down: false)), "\(name)")
+        }
+    }
+
+    @Test("回车：选中的应用交给 handler 的 -performActionForItem:withEvent:sender:，参数是模型项、按键事件和 pager；返回 NO")
+    func performAction() throws {
+        let keys = KeyGrid([35])
+        keys.select(0, 12)
+        for character in [KeyCharacter.return, KeyCharacter.enter] {
+            keys.reset()
+            let event = key(character)
+            #expect(!keys.pager.keyDown(event))
+            let action = try #require(keys.source.actions.first)
+            #expect(keys.source.actions.count == 1)
+            #expect(action.item === keys.item(0, 12).clientItem)
+            #expect(action.event === event)
+            #expect(action.sender === keys.pager)
+        }
+        keys.show(0)
+        #expect(!keys.pager.keyDown(key(KeyCharacter.return)))
+        #expect(!keys.pager.performAction(nil))
+        #expect(keys.source.actions.isEmpty)
+    }
+
+    @Test("回车：选中文件夹时返回 YES，不交给 handler（打开文件夹在阶段 5）")
+    func performActionOnFolder() {
+        let scene = SceneGrid()
+        let recorder = KeyGridSource(counts: [])
+        let pager = scene.grid.pager
+        pager.handler = recorder
+        defer {
+            pager.selectedItem = nil
+            pager.handler = scene.source
+        }
+        let folder = scene.page.item.items![9] as! ECSBItem
+        #expect(folder is ECSBGroupItem)
+        pager.selectedItem = folder
+        #expect(pager.keyDown(key(KeyCharacter.return)))
+        #expect(pager.performAction(nil))
+        #expect(recorder.actions.isEmpty)
+    }
+
+    // MARK: - ECSBSpringboard and Springboard (REF-KEYBOARD-001)
+
+    @Test("ECSBSpringboard：先给 ECSBLayer，它返回 NO 再给 ECSBPager；抬起相同")
+    func springboardKeys() {
+        let keys = KeyGrid([35])
+        for (name, event, _) in keptKeys {
+            keys.reset()
+            let character = Int64(event().keyData)
+            let performs = character == 0x0D || character == 0x03
+            #expect(!keys.grid.keyDown(event()), "\(name)")
+            #expect(keys.pager.log == ["layer keyDown NO", "pager keyDown NO"] + (performs ? ["pager performAction NO"] : []),
+                    "\(name)")
+            keys.reset()
+            #expect(!keys.grid.keyUp(key(character, down: false)), "\(name)")
+            #expect(keys.pager.log == ["layer keyUp NO", "pager keyUp NO"], "\(name)")
+        }
+    }
+
+    @Test("Springboard：方向键、Home、End、翻页键换成导航类型交给 ECSBSpringboard；Tab、字母、空格不导航；总是返回 YES")
+    func controllerKeys() {
+        let keys = KeyGrid([35, 35, 10])
+        let controller = makeController(keys)
+        let routes: [(name: String, event: ECEvent, navigation: String?)] = [
+            ("Up", key(KeyCharacter.up), "pager navigate 0 YES"),
+            ("Down", key(KeyCharacter.down), "pager navigate 1 YES"),
+            ("Left", key(KeyCharacter.left), "pager navigate 2 YES"),
+            ("Right", key(KeyCharacter.right), "pager navigate 3 YES"),
+            ("Home", key(KeyCharacter.home), "pager navigate 6 NO"),
+            ("End", key(KeyCharacter.end), "pager navigate 7 NO"),
+            ("Page Up", key(KeyCharacter.pageUp), "pager navigate 8 NO"),
+            ("Page Down", key(KeyCharacter.pageDown), "pager navigate 9 NO"),
+            ("Tab", key(KeyCharacter.tab), nil),
+            ("a", key(KeyCharacter.a), nil),
+            ("Space", key(KeyCharacter.space), nil),
+        ]
+        for (name, event, navigation) in routes {
+            keys.show(0)
+            #expect(controller.keyDown(event), "\(name)")
+            #expect(keys.pager.log == ["layer keyDown NO", "pager keyDown NO"] + (navigation.map { [$0] } ?? []), "\(name)")
+            #expect(keys.pager.currentPageIndex == 0, "\(name)")
+            #expect((keys.selection != nil) == (navigation?.hasSuffix("YES") == true), "\(name)")
+        }
+        // Home, End and the page keys leave a selection and the page as they are.
+        keys.select(0, 28)
+        for character in [KeyCharacter.home, KeyCharacter.end, KeyCharacter.pageUp, KeyCharacter.pageDown] {
+            #expect(controller.keyDown(key(character)))
+        }
+        #expect(keys.selection == [0, 28])
+        #expect(keys.pager.currentPageIndex == 0)
+        #expect(controller.reasons.isEmpty)
+        #expect(keys.source.actions.isEmpty)
+    }
+
+    @Test("Springboard：Cmd-→ 经 ECSBLayer、ECSBPager 到导航，换页")
+    func controllerCommandRight() {
+        let keys = KeyGrid([35, 35, 10])
+        let controller = makeController(keys)
+        #expect(controller.keyDown(key(KeyCharacter.right)))
+        #expect(controller.keyDown(key(KeyCharacter.right, command: true)))
+        #expect(keys.pager.log == ["layer keyDown NO", "pager keyDown NO", "pager navigate 3 YES",
+                                   "layer keyDown NO", "pager keyDown NO", "pager navigate 3 YES", "setCurrentPageIndex 1"])
+        #expect(keys.pager.currentPageIndex == 1)
+        #expect(keys.selection == [1, 0])
+    }
+
+    @Test("Springboard：不可见时导航键不导航")
+    func controllerHidden() {
+        let keys = KeyGrid([35, 35, 10])
+        let controller = makeController(keys)
+        controller._visible = false
+        for character in [KeyCharacter.up, KeyCharacter.down, KeyCharacter.left, KeyCharacter.right, KeyCharacter.home,
+                          KeyCharacter.end, KeyCharacter.pageUp, KeyCharacter.pageDown] {
+            keys.reset()
+            #expect(controller.keyDown(key(character, command: true)))
+            #expect(keys.pager.log == ["layer keyDown NO", "pager keyDown NO"])
+        }
+        #expect(keys.selection == nil)
+        #expect(keys.pager.currentPageIndex == 0)
+    }
+
+    @Test("Springboard：有选中项时回车启动，没有选中项时什么也不做，都不关闭；Esc 关闭")
+    func controllerReturnAndEscape() throws {
+        let keys = KeyGrid([35, 35, 10])
+        let controller = makeController(keys)
+        #expect(controller.keyDown(key(KeyCharacter.return)))
+        #expect(keys.pager.log == ["layer keyDown NO", "pager keyDown NO", "pager performAction NO"])
+        #expect(keys.source.actions.isEmpty)
+        keys.select(0, 3)
+        for character in [KeyCharacter.return, KeyCharacter.enter] {
+            keys.reset()
+            let event = key(character)
+            #expect(controller.keyDown(event))
+            #expect(keys.pager.log == ["layer keyDown NO", "pager keyDown NO", "pager performAction NO"])
+            let action = try #require(keys.source.actions.first)
+            #expect(action.item === keys.item(0, 3).clientItem && action.event === event && action.sender === keys.pager)
+        }
+        #expect(controller.reasons.isEmpty)
+        keys.reset()
+        #expect(controller.keyDown(key(KeyCharacter.escape)))
+        #expect(keys.pager.log == ["layer keyDown NO", "pager keyDown NO"])
+        #expect(controller.reasons == ["perform cancel while visible"])
+        #expect(keys.source.actions.isEmpty)
+    }
+
+    @Test("Springboard：编辑状态下 Return 和 Enter 退出编辑状态，选中的应用照样启动")
+    func controllerReturnInEditMode() {
+        let keys = KeyGrid([35])
+        let controller = makeController(keys)
+        for character in [KeyCharacter.return, KeyCharacter.enter] {
+            controller.editing = true
+            #expect(controller.keyDown(key(character)))
+            #expect(!controller.editing)
+        }
+        keys.select(0, 0)
+        controller.editing = true
+        #expect(controller.keyDown(key(KeyCharacter.return)))
+        #expect(!controller.editing)
+        #expect(keys.source.actions.count == 1)
+        controller.editing = true
+        #expect(controller.keyDown(key(KeyCharacter.escape)))
+        #expect(controller.editing)
+        controller.editing = false
+    }
+
+    @Test("Springboard：抬起先给 ECSBSpringboard，返回 NO")
+    func controllerKeyUp() {
+        let keys = KeyGrid([35])
+        let controller = makeController(keys)
+        for character in [KeyCharacter.return, KeyCharacter.right, KeyCharacter.a] {
+            keys.reset()
+            #expect(!controller.keyUp(key(character, down: false)))
+            #expect(keys.pager.log == ["layer keyUp NO", "pager keyUp NO"])
+        }
     }
 }

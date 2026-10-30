@@ -10,6 +10,9 @@ class ECSBLayer: ECPagerLayer, ECEventHandlingDelegate {
     @objc var zoomStyle = 0
     var scaleFactor: Float = 0
     var leftMouseDown = false
+    /// Set by `-keyDown:` for the keys it decides on itself; the search field gets the key up of the
+    /// others (REF-KEYBOARD-001).
+    var keyDownHandled = false
     var mouseDragged = false
 
     @objc(initWithPager:scaleFactor:layoutRTL:)
@@ -204,6 +207,56 @@ class ECSBLayer: ECPagerLayer, ECEventHandlingDelegate {
         }
         mouseDragged = false
         return handled
+    }
+
+    // MARK: - Keys (REF-KEYBOARD-001)
+
+    /// Decides which keys go to the search field. Tab, Command-Left and Command-Right, Left and Right,
+    /// Up, Down, Return, Enter and Escape set `keyDownHandled` and return NO, so that they reach the
+    /// navigation. Any other key, Home, End, Page Up and Page Down included, leaves it clear and goes
+    /// to the search field, which returns YES. The search field comes with phase 3: until then an input
+    /// method never composes in it, it never has focus or a search string, and the keys for it return
+    /// NO.
+    @objc(keyDown:)
+    func keyDown(_ event: ECEvent) -> Bool {
+        let key = event.keyData
+        keyDownHandled = false
+        // While an input method composes in the search field, the field gets every key (phase 3).
+        if key == 0x09 {  // Tab (REF-KEYBOARD-001)
+            // Toggles the search field's focus (phase 3).
+            keyDownHandled = true
+            return false
+        }
+        if event.commandKeyDown, key & 0xFFFE == 0xF702 {  // Command-Left, Command-Right (REF-KEYBOARD-001)
+            keyDownHandled = true
+            return false
+        }
+        // Space during a system drag opens or closes the folder under the drag or performs the item
+        // under it (phases 4 and 5).
+        switch key {
+        case 0xF703:  // Right (REF-KEYBOARD-001)
+            keyDownHandled = true
+            // With a search string, as Left (phase 3).
+            return false
+        case 0xF702:  // Left (REF-KEYBOARD-001)
+            keyDownHandled = true
+            // The search field gets the key when it has focus (phase 3).
+            return false
+        case 0x03, 0x0D, 0x1B, 0xF700, 0xF701:  // Enter, Return, Escape, Up, Down (REF-KEYBOARD-001)
+            keyDownHandled = true
+            return false
+        default:
+            // With a drag capture the search field is made inactive and loses focus; otherwise it is
+            // made active and gets the key (phase 3).
+            return false
+        }
+    }
+
+    /// The search field gets the key ups of the keys it got (phase 3); with a drag capture it is made
+    /// inactive and loses focus instead (phase 3). So NO until then (REF-KEYBOARD-001).
+    @objc(keyUp:)
+    func keyUp(_ event: ECEvent) -> Bool {
+        false
     }
 
     // MARK: - Scroll wheel and gestures (REF-PAGING-006)

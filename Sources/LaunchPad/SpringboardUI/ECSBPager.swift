@@ -129,6 +129,37 @@ class ECSBPager: ECPager {
         }
     }
 
+    // MARK: - Keys (REF-KEYBOARD-005)
+
+    /// Return and Enter perform the selected item; any other key returns NO. An alert panel gets the
+    /// key first (phase 4).
+    @objc(keyDown:)
+    func keyDown(_ event: ECEvent) -> Bool {
+        let key = event.keyData
+        guard key == 0x0D || key == 0x03 else { return false }  // Return, Enter (REF-KEYBOARD-005)
+        return performAction(event)
+    }
+
+    @objc(keyUp:)
+    func keyUp(_ event: ECEvent) -> Bool {
+        false
+    }
+
+    /// An app goes to the handler with this pager as the sender, as a click does (REF-LAUNCH-002), and
+    /// the result is NO. Without a selected item, NO; with a folder shown its group pager gets the key
+    /// (phase 5). A folder opens with its first item selected and the result is YES (phase 5).
+    @objc(performAction:)
+    func performAction(_ event: ECEvent?) -> Bool {
+        guard let selected = _selectedItem else { return false }
+        if selected is ECSBGroupItem {
+            // Opening the folder with its first item selected comes with phase 5.
+            return true
+        }
+        (handler as? ECSBActionHandling)?.performAction(forItem: selected.clientItem, with: event, sender: self)
+        // The Dock's flag that makes the Dock bar drop the next key up is not set (REF-DEV-012).
+        return false
+    }
+
     // MARK: - Navigation (REF-KEYBOARD-002)
 
     /// Nothing while an item is dragged. With Command, Left and Right change the page (swapped right

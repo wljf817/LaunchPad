@@ -211,6 +211,26 @@ final class ECSBSpringboard: NSObject, ECPagerSource, ECSBGridActionHandling, EC
         set { pager.selectedItem = item(forClientItem: newValue) }
     }
 
+    // MARK: - Keys (REF-KEYBOARD-001)
+
+    /// The grid layer decides first, then the pager. Nothing while a folder title is edited (phase 5).
+    @objc(keyDown:)
+    func keyDown(_ event: ECEvent) -> Bool {
+        if layer.keyDown(event) {
+            return true
+        }
+        return pager.keyDown(event)
+    }
+
+    /// As `-keyDown:`.
+    @objc(keyUp:)
+    func keyUp(_ event: ECEvent) -> Bool {
+        if layer.keyUp(event) {
+            return true
+        }
+        return pager.keyUp(event)
+    }
+
     // MARK: - ECKeyboardNavigating (REF-KEYBOARD-002)
 
     /// The pager navigates. NO while a folder title is edited (phase 5) or the search field has focus
