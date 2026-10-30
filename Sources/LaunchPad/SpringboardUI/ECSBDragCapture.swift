@@ -24,7 +24,7 @@ final class ECSBDragCapture: NSObject, ECEventHandlingDelegate {
     @objc var newGroupIndex: UInt = 0
     @objc var lastGroupIndex: UInt = 0
     var imageFrame = CGRect.zero
-    private var _dragging = false
+    var _dragging = false
     var dragStarted = false
     private var _dragCanceled = false
     private var _fromInLockedRange = false

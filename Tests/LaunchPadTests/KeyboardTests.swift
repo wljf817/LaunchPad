@@ -622,6 +622,10 @@ final class RecordingPager: ECSBPager {
     override func pagerLayerClass() -> ECPagerLayer.Type {
         KeyRecordingLayer.self
     }
+
+    override func navigate(_ type: Int64, with event: ECEvent?) -> Bool {
+        record("pager navigate \(type)") { super.navigate(type, with: event) }
+    }
 }
 
 /// The pager layer of a `RecordingPager`.
@@ -761,5 +765,224 @@ struct KeyboardNavigationTests {
         #expect(keys.source.selections.isEmpty)
         #expect(keys.page(1).navigate(navigateRight, with: nil))
         #expect(keys.selection == [1, 11])
+    }
+
+    // MARK: - Pages (REF-KEYBOARD-002)
+
+    @Test("有选中项时 Cmd-→ 换到下一页并选中它的第一项；Cmd-← 换到上一页，也选中第一项")
+    func commandWithSelection() {
+        let keys = KeyGrid([35, 35, 10])
+        keys.select(0, 1)
+        #expect(keys.pager.navigate(navigateRight, with: key(KeyCharacter.right, command: true)))
+        #expect(keys.pager.currentPageIndex == 1)
+        #expect(keys.selection == [1, 0])
+        #expect(keys.selectedLayers(0).isEmpty && keys.selectedLayers(1) == [0])
+        keys.select(1, 12)
+        #expect(keys.pager.navigate(navigateLeft, with: key(KeyCharacter.left, command: true)))
+        #expect(keys.pager.currentPageIndex == 0)
+        #expect(keys.selection == [0, 0])
+        #expect(keys.selectedLayers(0) == [0] && keys.selectedLayers(1).isEmpty)
+    }
+
+    @Test("没有选中项时 Cmd-→ 换页后选中旧页的第一项，新页上没有选中框；之后的 → 在旧页上移动")
+    func commandRightWithoutSelection() {
+        let keys = KeyGrid([35, 35, 10])
+        #expect(keys.pager.navigate(navigateRight, with: key(KeyCharacter.right, command: true)))
+        #expect(keys.pager.currentPageIndex == 1)
+        #expect(keys.selection == [0, 0])
+        #expect(keys.selectedLayers(1).isEmpty)
+        #expect(keys.pager.log == ["pager navigate 3 YES", "setCurrentPageIndex 1"])
+        #expect(keys.pager.navigate(navigateRight, with: key(KeyCharacter.right)))
+        #expect(keys.pager.currentPageIndex == 1)
+        #expect(keys.selection == [0, 1])
+    }
+
+    @Test("没有选中项时 Cmd-← 换页以后没有选中项")
+    func commandLeftWithoutSelection() {
+        let keys = KeyGrid([35, 35, 10])
+        keys.show(1)
+        #expect(keys.pager.navigate(navigateLeft, with: key(KeyCharacter.left, command: true)))
+        #expect(keys.pager.currentPageIndex == 0)
+        #expect(keys.selection == nil)
+        #expect(keys.source.selections.isEmpty)
+    }
+
+    @Test("换不了页时按普通的左右键：最后一页 Cmd-→、第一页 Cmd-←")
+    func commandAtEnds() {
+        let keys = KeyGrid([35, 35, 10])
+        keys.show(2)
+        keys.select(2, 0)
+        #expect(keys.pager.navigate(navigateRight, with: key(KeyCharacter.right, command: true)))
+        #expect(keys.pager.currentPageIndex == 2)
+        #expect(keys.selection == [2, 1])
+        keys.show(0)
+        #expect(keys.pager.navigate(navigateLeft, with: key(KeyCharacter.left, command: true)))
+        #expect(keys.pager.currentPageIndex == 0)
+        #expect(keys.selection == [0, 34])
+        keys.select(0, 0)
+        #expect(!keys.pager.navigate(navigateLeft, with: key(KeyCharacter.left, command: true)))
+        #expect(keys.selection == [0, 0])
+        #expect(!keys.pager.log.contains { $0.hasPrefix("setCurrentPageIndex") })
+    }
+
+    @Test("拖动中返回 NO；有拖动捕获时换不了页，按普通的左右键")
+    func whileDragging() {
+        let keys = KeyGrid([35, 35, 10])
+        keys.show(1)
+        let capture = ECSBDragCapture(itemLayer: keys.item(1, 3).itemLayer!, fromPage: keys.page(1),
+                                      usingEventHandler: keys.grid.eventHandler)
+        keys.grid.eventHandler.dragCapture = capture
+        defer { keys.grid.eventHandler.dragCapture = nil }
+        capture._dragging = true
+        for type: Int64 in 0...9 {
+            #expect(!keys.pager.navigate(type, with: key(KeyCharacter.right, command: true)))
+            #expect(!keys.pager.navigate(type, with: key(KeyCharacter.right)))
+        }
+        #expect(keys.selection == nil)
+        #expect(keys.pager.currentPageIndex == 1)
+        capture._dragging = false
+        #expect(!keys.pager.canScroll())
+        #expect(keys.pager.navigate(navigateLeft, with: key(KeyCharacter.left, command: true)))
+        #expect(keys.pager.currentPageIndex == 1)
+        #expect(keys.selection == [1, 34])
+        #expect(!keys.pager.navigate(navigateRight, with: key(KeyCharacter.right, command: true)))
+        #expect(keys.selection == [1, 34])
+        keys.select(1, 0)
+        #expect(keys.pager.navigate(navigateRight, with: key(KeyCharacter.right, command: true)))
+        #expect(keys.pager.currentPageIndex == 1)
+        #expect(keys.selection == [1, 1])
+        #expect(!keys.pager.log.contains { $0.hasPrefix("setCurrentPageIndex") })
+    }
+
+    @Test("从右到左时 Cmd-← 换到下一页，Cmd-→ 换到上一页")
+    func commandRightToLeft() {
+        let keys = KeyGrid([35, 35, 10], rtl: true)
+        keys.select(0, 1)
+        #expect(keys.pager.navigate(navigateLeft, with: key(KeyCharacter.left, command: true)))
+        #expect(keys.pager.currentPageIndex == 1)
+        #expect(keys.selection == [1, 0])
+        #expect(keys.pager.navigate(navigateRight, with: key(KeyCharacter.right, command: true)))
+        #expect(keys.pager.currentPageIndex == 0)
+        #expect(keys.selection == [0, 0])
+        // On the first page Command-Right cannot change the page: Right right to left goes back.
+        keys.show(0)
+        #expect(keys.pager.navigate(navigateRight, with: key(KeyCharacter.right, command: true)))
+        #expect(keys.pager.currentPageIndex == 0)
+        #expect(keys.selection == [0, 34])
+        // Without a selection Command-Left scrolls on and selects the first item of the page it left.
+        keys.show(0)
+        #expect(keys.pager.navigate(navigateLeft, with: key(KeyCharacter.left, command: true)))
+        #expect(keys.pager.currentPageIndex == 1)
+        #expect(keys.selection == [0, 0])
+    }
+
+    @Test("Cmd-↑、Cmd-↓ 按普通的 ↑、↓；不带 Cmd 的左右键不换页；类型 6–9 返回 NO")
+    func otherKeysOnThePager() {
+        let keys = KeyGrid([35, 35, 10])
+        keys.select(0, 0)
+        #expect(keys.pager.navigate(navigateDown, with: key(KeyCharacter.down, command: true)))
+        #expect(keys.selection == [0, 7])
+        #expect(keys.pager.navigate(navigateUp, with: key(KeyCharacter.up, command: true)))
+        #expect(keys.selection == [0, 0])
+        keys.select(0, 34)
+        #expect(!keys.pager.navigate(navigateRight, with: key(KeyCharacter.right)))
+        #expect(keys.pager.navigate(navigateLeft, with: nil))
+        #expect(keys.selection == [0, 33])
+        for type: Int64 in 6...9 {
+            #expect(!keys.pager.navigate(type, with: key(KeyCharacter.home)))
+            keys.show(0)
+            #expect(!keys.pager.navigate(type, with: key(KeyCharacter.home)))
+            keys.select(0, 33)
+        }
+        #expect(keys.pager.currentPageIndex == 0)
+        #expect(keys.selection == [0, 33])
+        #expect(!keys.pager.log.contains { $0.hasPrefix("setCurrentPageIndex") })
+    }
+
+    @Test("类型 4、5 不看 Cmd 换页；4 只在原来有选中项时返回 YES；从右到左对调")
+    func accessibilityTypes() {
+        let keys = KeyGrid([35, 35, 10])
+        #expect(!keys.pager.navigate(4, with: nil))
+        #expect(keys.pager.currentPageIndex == 1)
+        #expect(keys.selection == nil)
+        keys.select(1, 3)
+        #expect(keys.pager.navigate(4, with: nil))
+        #expect(keys.pager.currentPageIndex == 2)
+        #expect(keys.selection == [2, 0])
+        #expect(!keys.pager.navigate(4, with: nil))
+        #expect(keys.pager.currentPageIndex == 2)
+        #expect(keys.pager.navigate(5, with: nil))
+        #expect(keys.pager.currentPageIndex == 1)
+        #expect(keys.selection == [1, 0])
+        keys.show(1)
+        #expect(keys.pager.navigate(5, with: nil))
+        #expect(keys.pager.currentPageIndex == 0)
+        #expect(keys.selection == nil)
+        #expect(!keys.pager.navigate(5, with: nil))
+
+        let rtl = KeyGrid([35, 35, 10], rtl: true)
+        #expect(rtl.pager.navigate(5, with: nil) == false)
+        #expect(rtl.pager.currentPageIndex == 1)
+        #expect(rtl.pager.navigate(4, with: nil))
+        #expect(rtl.pager.currentPageIndex == 0)
+    }
+
+    @Test("换页走 -setCurrentPageIndex:，滚动 layer 的动画与点圆点换页相同（REF-PAGING-002）")
+    func pageChangeAnimation() throws {
+        WindowTests.waitForMenuBar()
+        let display = CGMainDisplayID()
+        let window = WALayerKitWindow(frame: CGDisplayBounds(display), connection: UInt32(bitPattern: CGSMainConnectionID()),
+                                      display: display, tags: 0x400, level: 20)
+        let keys = KeyGrid([35, 35, 10])
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        window.layer.addSublayer(keys.grid.layer)
+        CATransaction.commit()
+        CATransaction.flush()
+        UserDefaults.standard.removeObject(forKey: "springboard-page-duration")
+        springboardPageDuration = -1
+        defer {
+            keys.grid.layer.removeFromSuperlayer()
+            springboardPageDuration = -1
+        }
+        let scrollLayer = keys.grid.layer.scrollLayer
+        let before = scrollLayer.bounds
+        keys.select(0, 4)
+        #expect(keys.pager.navigate(navigateRight, with: key(KeyCharacter.right, command: true)))
+        #expect(keys.pager.log == ["pager navigate 3 YES", "setCurrentPageIndex 1"])
+        let animation = try #require(scrollLayer.animation(forKey: "bounds") as? CABasicAnimation)
+        #expect(animation.duration == 0.5)
+        var points: [[Float]] = []
+        for index in 0..<4 {
+            var point: [Float] = [0, 0]
+            animation.timingFunction?.getControlPoint(at: index, values: &point)
+            points.append(point)
+        }
+        // REF-PAGING-002: (0, 0, 0.35841, 1.0019), single precision 0x3EB78184 and 0x3F803E42.
+        #expect(points[1] == [0, 0])
+        #expect(points[2].map(\.bitPattern) == [0x3EB7_8184, 0x3F80_3E42])
+        #expect((animation.fromValue as? NSValue)?.rectValue == before)
+        #expect(scrollLayer.bounds.minX == 1536)
+        scrollLayer.removeAllAnimations()
+    }
+
+    @Test("ECSBSpringboard 的导航交给 pager；Springboard 的 -navigate: 不带事件，所以 Cmd 不起作用")
+    func springboardNavigation() {
+        let keys = KeyGrid([35, 35, 10])
+        #expect(keys.grid.navigate(navigateRight, with: key(KeyCharacter.right, command: true)))
+        #expect(keys.pager.log == ["pager navigate 3 YES", "setCurrentPageIndex 1"])
+        #expect(keys.selection == [0, 0])
+
+        let controller = RecordingSpringboard()
+        controller.springboard = keys.grid
+        keys.show(0)
+        controller.navigate(navigateRight)
+        #expect(keys.pager.log == ["pager navigate 3 YES"])
+        #expect(keys.pager.currentPageIndex == 0)
+        #expect(keys.selection == [0, 0])
+        keys.reset()
+        controller.navigate(4)
+        #expect(keys.pager.log == ["pager navigate 4 YES", "setCurrentPageIndex 1"])
+        #expect(keys.selection == [1, 0])
     }
 }

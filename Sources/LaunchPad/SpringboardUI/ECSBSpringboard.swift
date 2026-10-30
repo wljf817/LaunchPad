@@ -6,7 +6,7 @@ import QuartzCore
 /// data source protocol (REF-ARCH-013).
 @MainActor
 @objc(ECSBSpringboard)
-final class ECSBSpringboard: NSObject, ECPagerSource, ECSBGridActionHandling, ECEventHandling {
+final class ECSBSpringboard: NSObject, ECPagerSource, ECSBGridActionHandling, ECKeyboardNavigating, ECEventHandling {
     /// The controller. It holds this object too; neither is released (REF-ARCH-006).
     @objc var handler: ECSBDataSource
     let item = ECSBSpringboardItem()
@@ -209,6 +209,15 @@ final class ECSBSpringboard: NSObject, ECPagerSource, ECSBGridActionHandling, EC
     @objc var selectedItem: AnyObject? {
         get { pager.selectedItem?.clientItem }
         set { pager.selectedItem = item(forClientItem: newValue) }
+    }
+
+    // MARK: - ECKeyboardNavigating (REF-KEYBOARD-002)
+
+    /// The pager navigates. NO while a folder title is edited (phase 5) or the search field has focus
+    /// (phase 3); with a folder shown its group pager navigates instead (phase 5).
+    @objc(navigate:withEvent:)
+    func navigate(_ type: Int64, with event: ECEvent?) -> Bool {
+        pager.navigate(type, with: event)
     }
 
     @objc func layout() {

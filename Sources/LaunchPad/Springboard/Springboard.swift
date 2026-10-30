@@ -596,6 +596,12 @@ class Springboard: NSObject, ECModalEventHandler, ECEventHandlingDelegate, ECSBD
         }
     }
 
+    /// Navigation without a key: accessibility's types 4 and 5 (phase 6) (REF-KEYBOARD-002).
+    @objc(navigate:)
+    func navigate(_ type: Int64) {
+        _ = springboard.navigate(type, with: nil)
+    }
+
     // MARK: - Selection (REF-KEYBOARD-003)
 
     /// Before the main grid's selected item changes: nothing, as in the original.

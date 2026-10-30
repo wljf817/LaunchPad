@@ -129,6 +129,81 @@ class ECSBPager: ECPager {
         }
     }
 
+    // MARK: - Navigation (REF-KEYBOARD-002)
+
+    /// Nothing while an item is dragged. With Command, Left and Right change the page (swapped right
+    /// to left); types 4 and 5 change it without Command. When that does not return YES, the page of
+    /// the selected item moves the selection, or, without one, the page that was current at the start.
+    /// So with no item selected, Command-Right scrolls to the next page and then selects the first
+    /// item of the page it left; on the first or the last page, or while the pages cannot scroll,
+    /// Command-Left and Command-Right move the selection as Left and Right do.
+    @objc(navigate:withEvent:)
+    func navigate(_ type: Int64, with event: ECEvent?) -> Bool {
+        guard eventHandler?.dragging != true else { return false }
+        let layoutRTL = layoutRTL
+        let count = pagerSource?.numberOfPages(for: self) ?? 0
+        let index = currentPageIndex
+        let page = index < UInt(_pages.count) ? _pages[Int(index)] as? ECSBPage : nil
+        // Both select the first item of the new page when an item was selected before.
+        let previousPage = { () -> Bool in
+            guard self.canScroll(), index != 0 else { return false }
+            let selected = self._selectedItem
+            self.currentPageIndex = self.currentPageIndex - 1
+            if selected != nil, let first = self.currentPage?.item.items?.firstObject as? ECSBItem {
+                self.selectedItem = first
+            }
+            return true
+        }
+        // YES only when an item was selected before, although the page changes either way.
+        let nextPage = { () -> Bool in
+            guard self.canScroll(), count != 0, index < count - 1 else { return false }
+            let selected = self._selectedItem
+            self.currentPageIndex = self.currentPageIndex + 1
+            guard selected != nil else { return false }
+            if let first = self.currentPage?.item.items?.firstObject as? ECSBItem {
+                self.selectedItem = first
+            }
+            return true
+        }
+        let commandPreviousPage = { () -> Bool in
+            event?.commandKeyDown == true ? previousPage() : false
+        }
+        let commandNextPage = { () -> Bool in
+            event?.commandKeyDown == true ? nextPage() : false
+        }
+        let pageChange: (() -> Bool)?
+        switch type {
+        case 1:  // Down
+            if _selectedItem != nil, event?.commandKeyDown == true, _selectedItem is ECSBGroupItem {
+                // Opening the folder with its first item selected comes with phase 5.
+                return true
+            }
+            pageChange = nil
+        case 2:  // Left
+            pageChange = layoutRTL ? commandNextPage : commandPreviousPage
+        case 3:  // Right
+            pageChange = layoutRTL ? commandPreviousPage : commandNextPage
+        case 4:  // next page
+            pageChange = layoutRTL ? previousPage : nextPage
+        case 5:  // previous page
+            pageChange = layoutRTL ? nextPage : previousPage
+        default:
+            pageChange = nil
+        }
+        if let pageChange, pageChange() {
+            return true
+        }
+        if let selected = _selectedItem {
+            if let pageItem = selected.parent as? ECSBPageItem {
+                return pageItem.page?.navigate(type, with: event) ?? false
+            }
+            // An item whose parent's parent is a folder goes to the folder's group (phase 5).
+            return false
+        }
+        // The shown folder comes before the page (phase 5).
+        return page?.navigate(type, with: event) ?? false
+    }
+
     // MARK: - Page changes (REF-PAGING-001)
 
     /// Clears the selection, then tells the pager source and the handler, when they respond; the
