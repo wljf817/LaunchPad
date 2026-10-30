@@ -182,24 +182,122 @@ import Testing
         #expect(copies.count == 1)
         #expect(copies.first?.frame == inside.frame)
 
-        // A layer that only reaches the band while its zoom runs (REF-OVERLAY-001) is copied too.
+        // A layer that only reaches the band at the start of its zoom (REF-OVERLAY-001) is copied while
+        // the zoom runs.
         let content = CALayer()
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         content.frame = below.frame
         zoomed.addSublayer(content)
         window.layer.addSublayer(zoomed)
-        let size = max(window.layer.bounds.width, window.layer.bounds.height)
-        let scale = 1 + (gap + 20) / size
-        let animation = CABasicAnimation(keyPath: "transform")
-        animation.fromValue = NSValue(caTransform3D: CATransform3DMakeScale(scale, scale, 1))
-        animation.duration = 10
-        zoomed.add(animation, forKey: "transform")
+        zoomed.add(zoom(from: scale(taking: content.frame, into: band, about: zoomed.position)), forKey: "transform")
         CATransaction.commit()
         CATransaction.flush()
         copies = try #require(window.stripLayer.sublayers?.first?.sublayers)
         #expect(copies.count == 2)
         #expect(copies.last?.sublayers?.first?.frame == content.frame)
+    }
+
+    @Test("缩放中到不了顶条的 layer 不复制，按整棵树的尺寸放宽时会到的也一样")
+    func copyLeavesOutWhatAZoomKeepsAway() throws {
+        let window = makeWindow()
+        let band = try stripBand(window)
+        let away: CGFloat = band.minY > window.layer.bounds.midY ? -1 : 1
+        let gap = band.height * 2
+        let zoomed = CALayer()
+        let content = CALayer()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        zoomed.frame = window.layer.bounds
+        content.frame = CGRect(x: band.minX, y: away > 0 ? band.maxY + gap : band.minY - gap - 10, width: 10, height: 10)
+        zoomed.addSublayer(content)
+        window.layer.addSublayer(zoomed)
+        // Half way to the band: the zoom moves the content's edge by half the gap.
+        let half = 1 + (scale(taking: content.frame, into: band, about: zoomed.position) - 1) / 2
+        // Before REF-DEV-003's exact rule, a layer under a zoom was widened by the zoom's change of scale
+        // times the tree's size, which took this one in.
+        let size = max(window.layer.bounds.width, window.layer.bounds.height)
+        try #require((half - 1) * size > gap)
+        zoomed.add(zoom(from: half), forKey: "transform")
+        CATransaction.commit()
+        CATransaction.flush()
+        var zoomedCopy = try #require(window.stripLayer.sublayers?.first?.sublayers?.first)
+        #expect(zoomedCopy.sublayers == nil)
+
+        // The close: the model is the larger scale and the zoom only shrinks from it (REF-OVERLAY-004). A
+        // layer whose model rectangle stops a point short of the band stays out, although the earlier
+        // rule, widening it by the change of scale times the tree's size, would take it in.
+        let large = scale(taking: content.frame, into: band, about: zoomed.position)
+        let short = 1 + (large - 1) * (1 - 2 / gap)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        zoomed.removeAllAnimations()
+        zoomed.transform = CATransform3DMakeScale(short, short, 1)
+        let shrink = CABasicAnimation(keyPath: "transform")
+        shrink.fromValue = NSValue(caTransform3D: CATransform3DIdentity)
+        shrink.duration = 10
+        zoomed.add(shrink, forKey: "transform")
+        CATransaction.commit()
+        CATransaction.flush()
+        let modelRect = content.convert(content.bounds, to: window.layer)
+        try #require(!modelRect.intersects(band))
+        let earlierReach = (1 - 1 / short) * size
+        try #require(modelRect.insetBy(dx: -earlierReach, dy: -earlierReach).intersects(band))
+        zoomedCopy = try #require(window.stripLayer.sublayers?.first?.sublayers?.first)
+        #expect(zoomedCopy.sublayers == nil)
+    }
+
+    @Test("两层缩放合起来才把 layer 带到顶条时也复制")
+    func copyCountsNestedZooms() throws {
+        let window = makeWindow()
+        let band = try stripBand(window)
+        let away: CGFloat = band.minY > window.layer.bounds.midY ? -1 : 1
+        let gap = band.height * 2
+        let outer = CALayer()
+        let inner = CALayer()
+        let content = CALayer()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        outer.frame = window.layer.bounds
+        inner.frame = outer.bounds
+        content.frame = CGRect(x: band.minX, y: away > 0 ? band.maxY + gap : band.minY - gap - 10, width: 10, height: 10)
+        inner.addSublayer(content)
+        outer.addSublayer(inner)
+        window.layer.addSublayer(outer)
+        // Each zoom alone moves the content's edge only part of the way; both together take it one point
+        // into the band.
+        let each = scale(taking: content.frame, into: band, about: outer.position).squareRoot()
+        outer.add(zoom(from: each), forKey: "transform")
+        CATransaction.commit()
+        CATransaction.flush()
+        var innerCopy = try #require(window.stripLayer.sublayers?.first?.sublayers?.first?.sublayers?.first)
+        #expect(innerCopy.sublayers == nil)
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        inner.add(zoom(from: each), forKey: "transform")
+        // Any change of a copied layer schedules the sync; adding an animation alone does not.
+        inner.opacity = 0.5
+        CATransaction.commit()
+        CATransaction.flush()
+        innerCopy = try #require(window.stripLayer.sublayers?.first?.sublayers?.first?.sublayers?.first)
+        #expect(innerCopy.sublayers?.first?.frame == content.frame)
+    }
+
+    /// The scale about `center` that takes the edge of `rect` facing `band` one point into the band, for a
+    /// rectangle between `center` and the band.
+    func scale(taking rect: CGRect, into band: CGRect, about center: CGPoint) -> CGFloat {
+        let (edge, target) = rect.maxY <= band.minY ? (rect.maxY, band.minY + 1) : (rect.minY, band.maxY - 1)
+        return (target - center.y) / (edge - center.y)
+    }
+
+    /// A zoom from `scale` to the model transform, as the open's (REF-OVERLAY-001), long enough to run
+    /// through the test.
+    func zoom(from scale: CGFloat) -> CABasicAnimation {
+        let animation = CABasicAnimation(keyPath: "transform")
+        animation.fromValue = NSValue(caTransform3D: CATransform3DMakeScale(scale, scale, 1))
+        animation.duration = 10
+        return animation
     }
 
     /// The strip's area in the tree's coordinates.

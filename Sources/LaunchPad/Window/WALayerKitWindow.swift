@@ -173,7 +173,7 @@ final class WALayerKitWindow: WAWindow {
         }
         // The strip's area in the tree's coordinates.
         let band = rootCopy.convert(stripLayer.bounds, from: stripLayer)
-        sync(layer, into: rootCopy, band: band, reach: 0, visited: &visited)
+        sync(layer, into: rootCopy, band: band, zooms: [], visited: &visited)
         placeRootCopy(rootCopy)
         for id in Array(copies.keys) where !visited.contains(id) {
             copies[id] = nil
@@ -192,32 +192,54 @@ final class WALayerKitWindow: WAWindow {
         }
     }
 
-    /// How far a point of `source`'s subtree can move from where the model puts it while its
-    /// transform animations run: the largest change of scale between an animation's values and the
-    /// model value, times the tree's size. The open and close zoom the main grid this way
-    /// (REF-OVERLAY-001, REF-OVERLAY-004).
-    func animatedReach(of source: CALayer) -> CGFloat {
+    /// A layer whose transform animations scale it, with the range of the ratio of its scale to the
+    /// model's while they run, in x and in y (1 included).
+    typealias Zoom = (layer: CALayer, x: ClosedRange<CGFloat>, y: ClosedRange<CGFloat>)
+
+    /// The zoom of `source`, or nil without a transform animation that scales it: the ratios of each
+    /// animation's start and end scales to the model's. The open and close zoom the main grid this way
+    /// (REF-OVERLAY-001, REF-OVERLAY-004), the launch its fly-out layer (REF-LAUNCH-002).
+    func zoom(of source: CALayer) -> Zoom? {
         let model = source.transform
-        var deviation: CGFloat = 0
+        guard model.m11 != 0, model.m22 != 0 else { return nil }
+        var x: ClosedRange<CGFloat> = 1...1
+        var y: ClosedRange<CGFloat> = 1...1
         for key in source.animationKeys() ?? [] {
             guard let animation = source.animation(forKey: key) as? CABasicAnimation,
                   animation.keyPath == "transform" else { continue }
             for value in [animation.fromValue, animation.toValue] {
-                guard let transform = (value as? NSValue)?.caTransform3DValue,
-                      model.m11 != 0, model.m22 != 0 else { continue }
-                deviation = max(deviation, abs(transform.m11 / model.m11 - 1), abs(transform.m22 / model.m22 - 1))
+                guard let transform = (value as? NSValue)?.caTransform3DValue else { continue }
+                let ratioX = transform.m11 / model.m11
+                let ratioY = transform.m22 / model.m22
+                x = min(x.lowerBound, ratioX)...max(x.upperBound, ratioX)
+                y = min(y.lowerBound, ratioY)...max(y.upperBound, ratioY)
             }
         }
-        let size = max(layer.bounds.width, layer.bounds.height)
-        return deviation * size
+        return x == 1...1 && y == 1...1 ? nil : (source, x, y)
     }
 
-    /// Whether `source` can show in `band` (the tree's coordinates): its bounds in the tree, widened
-    /// by `reach`, meet the band. A layer without a size may hold sublayers anywhere, so it counts.
-    func reaches(_ source: CALayer, band: CGRect, reach: CGFloat) -> Bool {
+    /// Whether `source` can show in `band` (the tree's coordinates) at some moment of `zooms` (outermost
+    /// first; `source`'s own last when it zooms). A zoom scales the zooming layer's subtree about the
+    /// layer's position, between the smallest and the largest ratio, and each edge of a rectangle moves
+    /// linearly with the ratio: from the innermost zoom out, the rectangle in the zooming layer's
+    /// superlayer is scaled by both ratios and the results joined, which is the rectangle it sweeps
+    /// (REF-DEV-003). A layer without a size may hold sublayers anywhere, so it counts.
+    func reaches(_ source: CALayer, band: CGRect, zooms: [Zoom]) -> Bool {
         if source.bounds.isEmpty { return true }
-        let rect = source.convert(source.bounds, to: layer)
-        return rect.insetBy(dx: -reach, dy: -reach).intersects(band)
+        var rect = source.bounds
+        var space = source
+        for zoom in zooms.reversed() {
+            guard let superlayer = zoom.layer.superlayer else { continue }
+            rect = space.convert(rect, to: superlayer)
+            let position = zoom.layer.position
+            func scaled(_ x: CGFloat, _ y: CGFloat) -> CGRect {
+                rect.applying(CGAffineTransform(translationX: position.x, y: position.y).scaledBy(x: x, y: y)
+                    .translatedBy(x: -position.x, y: -position.y))
+            }
+            rect = scaled(zoom.x.lowerBound, zoom.y.lowerBound).union(scaled(zoom.x.upperBound, zoom.y.upperBound))
+            space = superlayer
+        }
+        return space.convert(rect, to: layer).intersects(band)
     }
 
     /// A plain `CALayer` for every layer: the grid's layer classes have no `-init` to make a copy of
@@ -232,7 +254,7 @@ final class WALayerKitWindow: WAWindow {
         return copy
     }
 
-    func sync(_ source: CALayer, into copy: CALayer, band: CGRect, reach: CGFloat, visited: inout Set<ObjectIdentifier>) {
+    func sync(_ source: CALayer, into copy: CALayer, band: CGRect, zooms: [Zoom], visited: inout Set<ObjectIdentifier>) {
         visited.insert(ObjectIdentifier(source))
         copy.bounds = source.bounds
         copy.position = source.position
@@ -271,20 +293,22 @@ final class WALayerKitWindow: WAWindow {
         copy.minificationFilter = source.minificationFilter
         if let mask = source.mask {
             let maskCopy = self.copy(of: mask)
-            sync(mask, into: maskCopy, band: .infinite, reach: reach, visited: &visited)
+            sync(mask, into: maskCopy, band: .infinite, zooms: zooms, visited: &visited)
             copy.mask = maskCopy
         } else {
             copy.mask = nil
         }
 
-        let candidates = (source.sublayers ?? []).map { ($0, reach + animatedReach(of: $0)) }
-        let sublayers = candidates.filter { reaches($0.0, band: band, reach: $0.1) }
+        let candidates = (source.sublayers ?? []).map { sublayer in
+            (sublayer, zoom(of: sublayer).map { zooms + [$0] } ?? zooms)
+        }
+        let sublayers = candidates.filter { reaches($0.0, band: band, zooms: $0.1) }
         let sublayerCopies = sublayers.map { self.copy(of: $0.0) }
         if (copy.sublayers ?? []).map(ObjectIdentifier.init) != sublayerCopies.map(ObjectIdentifier.init) {
             copy.sublayers = sublayerCopies.isEmpty ? nil : sublayerCopies
         }
-        for ((sublayer, sublayerReach), sublayerCopy) in zip(sublayers, sublayerCopies) {
-            sync(sublayer, into: sublayerCopy, band: band, reach: sublayerReach, visited: &visited)
+        for ((sublayer, sublayerZooms), sublayerCopy) in zip(sublayers, sublayerCopies) {
+            sync(sublayer, into: sublayerCopy, band: band, zooms: sublayerZooms, visited: &visited)
         }
 
         // An animation added in this transaction has a begin time of 0 until the commit sets it, so
