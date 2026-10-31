@@ -242,4 +242,112 @@ struct SearchFieldTests {
             #expect(point == expected)
         }
     }
+
+    // MARK: - State (REF-SEARCH-005)
+
+    /// Records the keys a layer asks its delegate actions for; none are asked while actions are
+    /// disabled.
+    final class ActionRecorder: NSObject, CALayerDelegate {
+        var keys: [String] = []
+
+        func action(for layer: CALayer, forKey event: String) -> (any CAAction)? {
+            keys.append(event)
+            return nil
+        }
+    }
+
+    @Test("设非空文字后占位文字隐藏、清除按钮显示，设空后相反，都不带隐式动画")
+    func stringValue() throws {
+        let field = makeField()
+        let placeholder = try #require(field._placeholderLayer)
+        let cancel = try #require(field._cancelSearchLayer)
+        let recorder = ActionRecorder()
+        placeholder.delegate = recorder
+        cancel.delegate = recorder
+
+        field.stringValue = "a"
+        #expect(placeholder.isHidden)
+        #expect(!cancel.isHidden)
+        field.stringValue = ""
+        #expect(!placeholder.isHidden)
+        #expect(cancel.isHidden)
+        #expect(recorder.keys.isEmpty)
+        #expect(!CATransaction.disableActions())
+    }
+
+    @Test("搜索框的不透明度只会被设成 1", arguments: [
+        // the change after the state it needs, the opacity after it
+        ("fade on", 1.0),
+        ("string not empty, focused", 1.0),
+        ("string empty, focused", 0.5),
+        ("string empty, not focused", 1.0),
+        ("deactivated, focused", 0.5),
+        ("deactivated, not focused", 1.0),
+        ("focus", 1.0),
+        ("focus lost", 0.5),
+    ])
+    func opacity(change: String, expected: Float) {
+        let field = makeField()
+        switch change {
+        case "string not empty, focused", "string empty, focused":
+            field.stringValue = "a"
+            field.hasFocus = true
+        case "string empty, not focused":
+            field.stringValue = "a"
+        case "deactivated, focused", "focus lost":
+            field.hasFocus = true
+        case "deactivated, not focused":
+            field.textFieldActive = true
+        default:
+            break
+        }
+        field.opacity = 0.5
+        switch change {
+        case "fade on":
+            field.fadeWhenNotActive = true
+        case "string not empty, focused":
+            field.stringValue = "b"
+        case "string empty, focused", "string empty, not focused":
+            field.stringValue = ""
+        case "deactivated, focused", "deactivated, not focused":
+            field.textFieldActive = false
+        case "focus":
+            field.hasFocus = true
+        case "focus lost":
+            field.hasFocus = false
+        default:
+            break
+        }
+        #expect(field.opacity == expected)
+    }
+
+    @Test("没激活时取得焦点先激活")
+    func focusActivates() {
+        let field = makeField()
+        field.frame = Self.frame
+        field.hasFocus = true
+        #expect(field.textFieldActive)
+        #expect(field._magnifyLayer?.frame.minX == 7)
+    }
+
+    @Test("激活和取消激活都重新布局")
+    func activationLayout() {
+        let field = makeField()
+        field.frame = Self.frame
+        field.textFieldActive = true
+        #expect(field._magnifyLayer?.frame.minX == 7)
+        #expect(field._placeholderLayer?.frame.minX == 27)
+        field.textFieldActive = false
+        #expect(field._magnifyLayer?.frame.minX == 100.5)
+        #expect(field._placeholderLayer?.frame.minX == 120.5)
+    }
+
+    @Test("按下清除按钮时不透明，松开回到 0.3")
+    func darkenCancelLayer() {
+        let field = makeField()
+        field._darkenCancelLayer(true)
+        #expect(field._cancelSearchLayer?.opacity == 1)
+        field._darkenCancelLayer(false)
+        #expect(field._cancelSearchLayer?.opacity == 0.3)
+    }
 }
