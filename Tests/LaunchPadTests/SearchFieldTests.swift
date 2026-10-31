@@ -203,4 +203,43 @@ struct SearchFieldTests {
             #expect(ECTextInputLayer.layer(forHelperPID: getpid()) == nil)
         }
     }
+
+    // MARK: - Layout (REF-SEARCH-002)
+
+    @Test("250 × 25、占位文字 33 × 19 时子 layer 的 frame", arguments: [
+        // active, right to left, placeholder x, magnifier x, cancel x
+        (false, false, 120.5, 100.5, 230.0),
+        (false, true, 96.5, 137.5, 6.0),
+        (true, false, 27.0, 7.0, 230.0),
+        (true, true, 190.0, 231.0, 6.0),
+    ])
+    func layout(active: Bool, layoutRTL: Bool, placeholderX: CGFloat, magnifierX: CGFloat, cancelX: CGFloat) throws {
+        let field = makeField(layoutRTL: layoutRTL)
+        try #require(field._placeholderLayer?.preferredFrameSize() == CGSize(width: 33, height: 19))
+        field.textFieldActive = active
+        field.frame = Self.frame
+        #expect(field._placeholderLayer?.frame == CGRect(x: placeholderX, y: 4, width: 33, height: 19))
+        #expect(field._magnifyLayer?.frame == CGRect(x: magnifierX, y: 7, width: 12, height: 12))
+        #expect(field._cancelSearchLayer?.frame == CGRect(x: cancelX, y: 6, width: 14, height: 14))
+        #expect(field._hostLayer.frame == CGRect(x: 25, y: 0, width: 200, height: 25))
+    }
+
+    @Test("布局把当前事务的曲线改成 ease-in-ease-out，不恢复")
+    func layoutTimingFunction() throws {
+        let field = makeField()
+        CATransaction.flush()
+        CATransaction.begin()
+        defer { CATransaction.commit() }
+        try #require(CATransaction.animationTimingFunction() == nil)
+        field.frame = Self.frame
+        let function = try #require(CATransaction.animationTimingFunction())
+        let easeInEaseOut = CAMediaTimingFunction(name: .easeInEaseOut)
+        for index in 0..<4 {
+            var point = [Float](repeating: 0, count: 2)
+            var expected = [Float](repeating: 0, count: 2)
+            function.getControlPoint(at: index, values: &point)
+            easeInEaseOut.getControlPoint(at: index, values: &expected)
+            #expect(point == expected)
+        }
+    }
 }
