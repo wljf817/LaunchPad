@@ -27,6 +27,8 @@ cp "$bin_dir/LaunchPadLauncher" "$app/Contents/MacOS/LaunchPad"
 cp "$bin_dir/LaunchPad" "$agent/Contents/MacOS/LaunchPadAgent"
 cp Sources/LaunchPad/Resources/LaunchPadLayout.plist "$agent/Contents/Resources/"
 cp -R Sources/LaunchPad/Resources/*.lproj "$agent/Contents/Resources/"
+# The search field's images, drawn by tools/assets/search-field-images.swift (REF-SEARCH-003).
+cp Sources/LaunchPad/Resources/ectl_search_*.png "$agent/Contents/Resources/"
 
 # LSMinimumSystemVersion must match the deployment target in Package.swift.
 cat > "$app/Contents/Info.plist" <<'PLIST'
