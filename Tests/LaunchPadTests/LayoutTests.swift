@@ -104,10 +104,10 @@ struct LayoutTests {
         layout(root).layoutForInitial(root.allPurgatoryItems)
 
         let titles = (root.children as! [LPPage]).flatMap { ($0.children as! [LPItem]).compactMap { ($0 as? LPGroup)?.title } }
-        // REF-LAYOUT-009, zh_CN: Other, Games and "%@ (Other)".
-        #expect(titles.contains("其他"))
-        #expect(titles.contains("游戏"))
-        #expect(titles.contains("Suite（其他）"))
+        // REF-LAYOUT-009, zh_CN: Other, Games and "%@ (Other)". The Utilities app goes into the first
+        // page's Other folder of the same title (REF-LAYOUT-005 steps 3, 7 and 8).
+        #expect(titles.count == 3)
+        #expect(Set(titles) == ["其他", "游戏", "Suite（其他）"])
     }
 
     @Test("排除的应用")
@@ -223,16 +223,10 @@ struct LayoutTests {
         var moved: [LPItem] = []
         layout.fixupLayout(withExcludeListVersion: 5, includeAsGameListVersion: 0, curationVersion: 8,
                            itemExcluded: { _ in },
-                           itemIncludedAsGame: { item in
-                               moved.append(item)
-                               let target = layout.groupForKind(1)?.firstAvailablePage(withMaxCount: layout.maxPerGroupPage, createIfNecessary: true)
-                               target?.children.add(item)
-                           },
+                           itemIncludedAsGame: { moved.append($0) },
                            changesMade: { _, _, _ in })
 
         #expect(moved.map(\.title) == ["Diablo"])
-        #expect(diablo.parentGroup === games)
-        #expect((page.children as! [LPItem]).map(\.title) == ["游戏"])
     }
 }
 

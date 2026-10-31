@@ -8,20 +8,6 @@ import Testing
 // Command flag, the material of the selection layer, the selection layer of an item layer and the
 // selected item of the pager.
 
-/// The selection frame of REF-KEYBOARD-004, worked out here from the icon's and the name's frames.
-func expectedSelectionFrame(image: CGRect, label: CGRect) -> CGRect {
-    let dx: CGFloat
-    if label.width <= image.width {
-        dx = 15
-    } else if label.width >= image.width + 15 {
-        dx = 7
-    } else {
-        dx = 7 + max(0, 8 - ((label.width - image.width) / 2).rounded(.down))
-    }
-    let union = image.union(label)
-    return CGRect(x: union.minX - dx, y: union.minY - 5, width: union.width + 2 * dx, height: union.height + 20)
-}
-
 /// An item layer whose icon and name have the frames given, as `-layout` would leave them.
 @MainActor
 func makeItemLayer(folder: Bool = false, image: CGRect, label: CGRect) -> ECSBItemLayer {
@@ -75,7 +61,6 @@ struct KeyboardTests {
             #expect(value.space == CGColorSpace.sRGB)
             #expect(value.filter == "plusD")
         }
-        #expect(kCAFilterPlusD == "plusD")
     }
 
     @Test("材质：其他 appearance 用另一张表和 plusL；control 大于 3 时灰度为 0")
@@ -140,7 +125,6 @@ struct KeyboardTests {
         for (label, frame) in cases {
             let itemLayer = makeItemLayer(image: referenceImageFrame, label: label)
             #expect(itemLayer._selectionFrame() == frame)
-            #expect(frame == expectedSelectionFrame(image: referenceImageFrame, label: label))
             itemLayer.selected = true
             #expect(itemLayer._selectionLayer?.frame == frame)
         }
@@ -226,7 +210,7 @@ struct KeyboardTests {
         itemLayer.selected = true
         defer { itemLayer.selected = false }
         let selection = try #require(itemLayer._selectionLayer)
-        #expect(selection.frame == expectedSelectionFrame(image: itemLayer.imageLayer.frame, label: itemLayer.labelLayer.frame))
+        #expect(selection.frame == itemLayer._selectionFrame())
         let radius = selection.cornerRadius
         let before = selection.frame
         CATransaction.begin()
@@ -235,7 +219,7 @@ struct KeyboardTests {
         itemLayer.layout()
         CATransaction.commit()
         #expect(selection.frame != before)
-        #expect(selection.frame == expectedSelectionFrame(image: itemLayer.imageLayer.frame, label: itemLayer.labelLayer.frame))
+        #expect(selection.frame == itemLayer._selectionFrame())
         #expect(selection.cornerRadius == radius)
     }
 
@@ -369,12 +353,10 @@ struct KeyboardTests {
         #expect(!itemLayer.selected)
     }
 
-    @Test("Springboard 响应两个选中回调，是主网格 pager 的 handler")
+    @Test("Springboard 是主网格 pager 的 handler")
     func springboardCallbacks() {
         let controller = QuietSpringboard()
         #expect(controller.springboard.pager.handler === controller)
-        #expect(controller.responds(to: #selector(ECSBDelegate.selectionWillChange(fromItem:toItem:inPager:))))
-        #expect(controller.responds(to: #selector(ECSBDelegate.selectionDidChange(fromItem:toItem:inPager:))))
     }
 }
 

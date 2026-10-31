@@ -180,7 +180,7 @@ struct GridAnimationTests {
         } else {
             let event = try #require(transform.first)
             #expect(transform.count == 1)
-            #expect(event.duration == Springboard.animationDuration(slow: false, key: "springboard-show-duration"))
+            #expect(event.duration == 0.25)  // REF-OVERLAY-001
             #expect(event.timing == CAMediaTimingFunction(name: .easeIn))  // REF-OVERLAY-001
         }
     }
@@ -201,7 +201,7 @@ struct GridAnimationTests {
         } else {
             let event = try #require(transform.first)
             #expect(transform.count == 1)
-            #expect(event.duration == Springboard.animationDuration(slow: false, key: "springboard-hide-duration"))
+            #expect(event.duration == 0.25)  // REF-OVERLAY-004
             #expect(event.timing == CAMediaTimingFunction(name: .easeOut))  // REF-OVERLAY-004
         }
         recorder.events.removeAll()

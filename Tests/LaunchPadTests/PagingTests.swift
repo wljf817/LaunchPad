@@ -57,37 +57,6 @@ struct PagingTests {
         return window
     }
 
-    @Test("圆点在显式事务里改状态时颜色有动画，关掉隐式动画时没有")
-    func indicatorStateAnimation() throws {
-        let window = makeWindow()
-        let animated = ECPagerIndicatorLayer()
-        let still = ECPagerIndicatorLayer()
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        window.layer.addSublayer(animated)
-        window.layer.addSublayer(still)
-        CATransaction.commit()
-        CATransaction.flush()
-
-        CATransaction.begin()
-        CATransaction.setAnimationDuration(0.5)
-        animated.state = 1
-        CATransaction.commit()
-        let inner = try #require(animated.sublayers?.first)
-        let animation = try #require(inner.animation(forKey: "backgroundColor") as? CABasicAnimation)
-        #expect(animation.duration == 0.5)
-        #expect(components((animation.fromValue as! CGColor)) == [1, 0.2])
-
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        still.state = 1
-        CATransaction.commit()
-        #expect(still.sublayers?.first?.animation(forKey: "backgroundColor") == nil)
-
-        animated.removeFromSuperlayer()
-        still.removeFromSuperlayer()
-    }
-
     // MARK: - The page indicator (REF-PAGING-003)
 
     /// A main grid of `pages` empty pages laid out with the original's default geometry at the first

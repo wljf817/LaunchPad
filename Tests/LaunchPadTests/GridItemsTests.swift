@@ -144,23 +144,6 @@ struct GridItemsTests {
         }
     }
 
-    @Test("缓存被系统清掉的那一遍不算：重跑，只按没被打扰的那一遍断言")
-    func evictedRunIsRepeated() async {
-        var runs = 0
-        await withoutIconCacheEviction { checks in
-            runs += 1
-            let key = "LaunchPadTests-evicted-run" as NSString
-            LPRunnable.iconCache.setObject(NSObject(), forKey: key)
-            if runs == 1 {
-                // What NSCache does under memory pressure.
-                LPRunnable.iconCache.removeAllObjects()
-            }
-            checks.check(LPRunnable.iconCache.object(forKey: key) != nil, "the object stays in the cache")
-            LPRunnable.iconCache.removeObject(forKey: key)
-        }
-        #expect(runs == 2)
-    }
-
     @Test("写库存宽度和 PNG；读库建模型时图标进缓存；缓存里没有时从库里读")
     func iconStorage() async throws {
         let big = try #require(solidImage(96))

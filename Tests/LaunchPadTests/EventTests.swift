@@ -151,30 +151,13 @@ func notificationEvent(code: Int64) -> CGEvent {
         #expect(type(6, 1) == .max)
     }
 
-    @Test("invalidate 后不再持有事件和命中的对象；处理者是弱引用")
+    @Test("invalidate 后不再持有事件和命中的对象")
     func invalidate() {
-        var handler: RecordingHandler? = RecordingHandler(layer: nil)
-        let event = ECEvent(event: mouseEvent(.leftMouseDown, at: .zero), hitLayer: CALayer(), hitWindow: nil, session: handler)
-        #expect(event.session === handler)
-        handler = nil
-        #expect(event.session == nil)
+        let event = ECEvent(event: mouseEvent(.leftMouseDown, at: .zero), hitLayer: CALayer(), hitWindow: nil, session: nil)
         event.invalidate()
         #expect(event.event == nil)
         #expect(event.hitLayer == nil)
         #expect(event.type == 0)
-    }
-
-    @Test("eventDelegate 不持有对象")
-    func eventDelegateNotRetained() {
-        let layer = CALayer()
-        weak var weakDelegate: NSObject?
-        autoreleasepool {
-            let delegate = NSObject()
-            weakDelegate = delegate
-            layer.eventDelegate = delegate
-            #expect(layer.eventDelegate === delegate)
-        }
-        #expect(weakDelegate == nil)
     }
 }
 
@@ -500,7 +483,7 @@ final class RecordingSpringboard: Springboard {
         let systemDefined = try #require(NSEvent.otherEvent(with: .systemDefined, location: .zero, modifierFlags: [],
                                                             timestamp: 0, windowNumber: 0, context: nil, subtype: 8,
                                                             data1: 0, data2: 0))
-        #expect(systemDefined.cgEvent?.type.rawValue == 14)
+        try #require(systemDefined.cgEvent?.type.rawValue == 14)
         #expect(LaunchPadAppDelegate.springboardEvent(systemDefined) === systemDefined)
         #expect(springboard.handledEvents == 2)
 

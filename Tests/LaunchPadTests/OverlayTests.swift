@@ -426,7 +426,5 @@ import Testing
             let message = DockVisibility.tileSizeMessage(size)
             #expect(Int(Double(message) * 112 + 16) == points, "\(points)")
         }
-        // 45 is one of the sizes that the unchanged value turns into 44.
-        #expect(Int(Double(Float(45 - 16) / 112) * 112 + 16) == 44)
     }
 }

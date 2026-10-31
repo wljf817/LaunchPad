@@ -112,7 +112,7 @@ struct ModelTreeTests {
         let root = LPRoot()
         let page = LPPage(items: nil)
         root.children.add(page)
-        let folderPage = LPPage(items: [makeTestApp("B")])
+        let folderPage = LPPage(items: [makeTestApp("B"), makeTestApp("D")])
         let folder = LPGroup(groupWithTitle: "F", andChildren: [folderPage])
         page.children.addObjects(from: [makeTestApp("A"), folder, makeTestApp("C")])
 
@@ -120,7 +120,7 @@ struct ModelTreeTests {
         root.iterateChildren { item, _ in
             visited.append(item.title ?? "page")
         }
-        #expect(visited == ["page", "A", "F", "page", "B", "C"])
+        #expect(visited == ["page", "A", "F", "page", "B", "D", "C"])
 
         // Stopping ends only the level it is set on.
         visited = []

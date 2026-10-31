@@ -112,13 +112,20 @@ struct GridGeometryTests {
     // MARK: - Zoom (REF-GRID-005)
 
     @Test("缩放系数按显示器宽度和 Dock 方向取值")
-    func zoomFactorFromPrefs() async throws {
-        let springboard = try await launch()
-        let width = springboard.totalScreenBounds().width
-        // REF-GRID-005, for the display and the Dock the tests run with.
-        let base: CGFloat = width > 1920 ? 0.6 : width > 1680 ? 0.3 : width > 1440 ? 0.2 : 0
-        let expected = base > 0.1 && dockBar.barOrientation != 0 ? base - 0.1 : base
-        #expect(springboard.getZoomFactorFromPrefs() == expected)
+    func zoomFactorFromPrefs() {
+        let springboard = ScreenWidthSpringboard()
+        // REF-GRID-005: by width, with the Dock at the bottom and at a side (the side's 0.1 less; the
+        // value measured on the 1536-point display is 0.2 and 0.1). The Dock is the one the tests run with.
+        let atSide = dockBar.barOrientation != 0
+        let cases: [(width: CGFloat, bottom: CGFloat, side: CGFloat)] = [
+            (1024, 0, 0), (1440, 0, 0), (1441, 0.2, 0.1), (1536, 0.2, 0.1), (1680, 0.2, 0.1),
+            (1681, 0.3, 0.2), (1920, 0.3, 0.2), (1921, 0.6, 0.5), (2560, 0.6, 0.5),
+        ]
+        for (width, bottom, side) in cases {
+            springboard.screenWidth = width
+            let expected = atSide ? side : bottom
+            #expect(abs(springboard.getZoomFactorFromPrefs() - expected) < 1e-12, "\(width)")
+        }
     }
 
     @Test("调整后的边距与原版相同，缩放系数限在 0 到 1")
@@ -373,6 +380,16 @@ struct GridGeometryTests {
         await startup.makeDatabase()
         let springboard = try await startup.launch(injecting: StartupTests.goldenApps())
         return springboard
+    }
+}
+
+/// A controller on a display of the width given (REF-GRID-005 reads only the width).
+@MainActor
+final class ScreenWidthSpringboard: LPSpringboard {
+    var screenWidth: CGFloat = 1536
+
+    override func totalScreenBounds() -> CGRect {
+        CGRect(x: 0, y: 0, width: screenWidth, height: 960)
     }
 }
 
