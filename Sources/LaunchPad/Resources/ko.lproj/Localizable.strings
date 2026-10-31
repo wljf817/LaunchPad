@@ -8,3 +8,9 @@
 
 /* Loading indicator, REF-GRID-002 */
 "LAUNCH_PAD_LOADING" = "응용 프로그램 로드 중…";
+
+/* Search field placeholder, REF-SEARCH-004 */
+"Search" = "검색";
+
+/* No results, REF-SEARCH-007 */
+"No Results" = "결과 없음";

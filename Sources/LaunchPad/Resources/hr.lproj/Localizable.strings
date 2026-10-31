@@ -8,3 +8,9 @@
 
 /* Loading indicator, REF-GRID-002 */
 "LAUNCH_PAD_LOADING" = "Učitavanje aplikacija…";
+
+/* Search field placeholder, REF-SEARCH-004 */
+"Search" = "Traži";
+
+/* No results, REF-SEARCH-007 */
+"No Results" = "Bez rezultata";

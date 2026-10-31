@@ -8,3 +8,9 @@
 
 /* Loading indicator, REF-GRID-002 */
 "LAUNCH_PAD_LOADING" = "يتم الآن تحميل التطبيقات…";
+
+/* Search field placeholder, REF-SEARCH-004 */
+"Search" = "بحث";
+
+/* No results, REF-SEARCH-007 */
+"No Results" = "لا توجد نتائج";

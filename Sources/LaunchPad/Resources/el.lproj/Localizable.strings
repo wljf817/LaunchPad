@@ -8,3 +8,9 @@
 
 /* Loading indicator, REF-GRID-002 */
 "LAUNCH_PAD_LOADING" = "Φόρτωση εφαρμογών…";
+
+/* Search field placeholder, REF-SEARCH-004 */
+"Search" = "Αναζήτηση";
+
+/* No results, REF-SEARCH-007 */
+"No Results" = "Δεν υπάρχουν αποτελέσματα";

@@ -8,3 +8,9 @@
 
 /* Loading indicator, REF-GRID-002 */
 "LAUNCH_PAD_LOADING" = "正在载入应用程序…";
+
+/* Search field placeholder, REF-SEARCH-004 */
+"Search" = "搜索";
+
+/* No results, REF-SEARCH-007 */
+"No Results" = "无结果";

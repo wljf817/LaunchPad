@@ -8,3 +8,9 @@
 
 /* Loading indicator, REF-GRID-002 */
 "LAUNCH_PAD_LOADING" = "Ladataan appeja…";
+
+/* Search field placeholder, REF-SEARCH-004 */
+"Search" = "Etsi";
+
+/* No results, REF-SEARCH-007 */
+"No Results" = "Ei tuloksia";

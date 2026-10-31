@@ -8,3 +8,9 @@
 
 /* Loading indicator, REF-GRID-002 */
 "LAUNCH_PAD_LOADING" = "Завантаження програм…";
+
+/* Search field placeholder, REF-SEARCH-004 */
+"Search" = "Пошук";
+
+/* No results, REF-SEARCH-007 */
+"No Results" = "Немає результатів";

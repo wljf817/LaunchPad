@@ -8,3 +8,9 @@
 
 /* Loading indicator, REF-GRID-002 */
 "LAUNCH_PAD_LOADING" = "Uygulamalar Yükleniyor…";
+
+/* Search field placeholder, REF-SEARCH-004 */
+"Search" = "Ara";
+
+/* No results, REF-SEARCH-007 */
+"No Results" = "Hiç Sonuç Yok";

@@ -8,3 +8,9 @@
 
 /* Loading indicator, REF-GRID-002 */
 "LAUNCH_PAD_LOADING" = "Memuatkan Aplikasi…";
+
+/* Search field placeholder, REF-SEARCH-004 */
+"Search" = "Cari";
+
+/* No results, REF-SEARCH-007 */
+"No Results" = "Tiada Hasil";

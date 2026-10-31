@@ -79,4 +79,23 @@ struct SearchResourcesTests {
     func cgImage(_ image: Any?) -> CGImage? {
         image.map { $0 as! CGImage }
     }
+
+    // MARK: - Strings (REF-SEARCH-004, REF-SEARCH-007)
+
+    @Test("40 种语言的字符串文件都有非空的 Search、No Results")
+    func strings() throws {
+        let resources = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources/LaunchPad/Resources")
+        let localizations = try FileManager.default.contentsOfDirectory(atPath: resources.path)
+            .filter { $0.hasSuffix(".lproj") }
+        #expect(localizations.count == 40)
+        for localization in localizations {
+            let url = resources.appendingPathComponent("\(localization)/Localizable.strings")
+            let strings = try #require(NSDictionary(contentsOf: url) as? [String: String], "\(localization)")
+            for key in ["Search", "No Results"] {
+                #expect(strings[key]?.isEmpty == false, "\(localization) \(key)")
+            }
+        }
+    }
 }

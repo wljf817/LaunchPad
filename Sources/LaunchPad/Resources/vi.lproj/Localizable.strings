@@ -8,3 +8,9 @@
 
 /* Loading indicator, REF-GRID-002 */
 "LAUNCH_PAD_LOADING" = "Đang tải ứng dụng…";
+
+/* Search field placeholder, REF-SEARCH-004 */
+"Search" = "Tìm kiếm";
+
+/* No results, REF-SEARCH-007 */
+"No Results" = "Không có kết quả";

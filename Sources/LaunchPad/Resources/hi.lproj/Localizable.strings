@@ -8,3 +8,9 @@
 
 /* Loading indicator, REF-GRID-002 */
 "LAUNCH_PAD_LOADING" = "ऐप्लिकेशन लोड हो रहे हैं…";
+
+/* Search field placeholder, REF-SEARCH-004 */
+"Search" = "खोजें";
+
+/* No results, REF-SEARCH-007 */
+"No Results" = "कोई परिणाम नहीं";

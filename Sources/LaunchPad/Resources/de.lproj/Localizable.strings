@@ -8,3 +8,9 @@
 
 /* Loading indicator, REF-GRID-002 */
 "LAUNCH_PAD_LOADING" = "Programme laden\U00A0…";
+
+/* Search field placeholder, REF-SEARCH-004 */
+"Search" = "Suchen";
+
+/* No results, REF-SEARCH-007 */
+"No Results" = "Keine Ergebnisse";

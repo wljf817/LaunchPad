@@ -8,3 +8,9 @@
 
 /* Loading indicator, REF-GRID-002 */
 "LAUNCH_PAD_LOADING" = "Laster inn apper…";
+
+/* Search field placeholder, REF-SEARCH-004 */
+"Search" = "Søk";
+
+/* No results, REF-SEARCH-007 */
+"No Results" = "Ingen treff";

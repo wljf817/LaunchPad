@@ -8,3 +8,9 @@
 
 /* Loading indicator, REF-GRID-002 */
 "LAUNCH_PAD_LOADING" = "Cargando aplicaciones…";
+
+/* Search field placeholder, REF-SEARCH-004 */
+"Search" = "Buscar";
+
+/* No results, REF-SEARCH-007 */
+"No Results" = "Sin resultados";
