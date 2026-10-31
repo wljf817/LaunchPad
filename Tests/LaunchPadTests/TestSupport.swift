@@ -155,6 +155,11 @@ let testResources: Bundle = {
     try! FileManager.default.copyItem(at: resources.appendingPathComponent("LaunchPadLayout.plist"), to: directory.appendingPathComponent("LaunchPadLayout.plist"))
     try! FileManager.default.copyItem(at: resources.appendingPathComponent("zh_CN.lproj/Localizable.strings"),
                                       to: directory.appendingPathComponent("zh_CN.lproj/Localizable.strings"))
+    for name in ["ectl_search_background", "ectl_search_loupe", "ectl_search_loupe_rtl", "ectl_search_close"] {
+        for file in ["\(name).png", "\(name)@2x.png"] {
+            try! FileManager.default.copyItem(at: resources.appendingPathComponent(file), to: directory.appendingPathComponent(file))
+        }
+    }
     for (file, width) in testImageFiles {
         writeTestPNG(width: width, to: directory.appendingPathComponent(file))
     }

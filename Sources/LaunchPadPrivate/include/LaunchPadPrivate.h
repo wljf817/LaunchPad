@@ -194,6 +194,10 @@ extern NSString * const kCAFilterMultiplyColor;
 @interface CALayerHost : CALayer
 @end
 
+// The ascent, descent and leading of a line, with its width as the result; the search field sums the
+// three for its placeholder's height (REF-SEARCH-002). Exported by CoreText; on macOS 27.2 (26B123)
+// and macOS 26.6.2 (25G83) it gives the same values as CTLineGetTypographicBounds.
+extern double CTLineGetDefaultBounds(CTLineRef line, CGFloat *ascent, CGFloat *descent, CGFloat *leading);
 
 // LaunchServices' record of an installed app; public on iOS, not declared on macOS.
 // Tells whether a scanned app is a web app (flag 0x1000, REF-LAYOUT-003).
