@@ -414,3 +414,19 @@ import Testing
         #expect(springboard.desktopLastUUID == spaces.currentSpace(forDisplay: springboard.display())?.uuid)
     }
 }
+
+@MainActor
+@Suite struct DockVisibilityTests {
+    @Test("发给 Dock 的大小经 Dock 截断后不变，16…128 全部")
+    func tileSizeMessage() {
+        // REF-DEV-004: the Dock turns the message's size into a double, multiplies by 112, adds 16 and
+        // truncates; CoreDockGetTileSize gives (size - 16) / 112.
+        for points in 16...128 {
+            let size = Float(points - 16) / 112
+            let message = DockVisibility.tileSizeMessage(size)
+            #expect(Int(Double(message) * 112 + 16) == points, "\(points)")
+        }
+        // 45 is one of the sizes that the unchanged value turns into 44.
+        #expect(Int(Double(Float(45 - 16) / 112) * 112 + 16) == 44)
+    }
+}

@@ -27,7 +27,7 @@ final class DockVisibility: NSObject {
         showOverrideFlags |= type
         UserDefaults.standard.set(true, forKey: Self.dockOverrideKey)
         // REF-DEV-004: an unfinished change to the size the Dock has.
-        CoreDockSetTileSize(CoreDockGetTileSize(), 0)
+        CoreDockSetTileSize(Self.tileSizeMessage(CoreDockGetTileSize()), 0)
     }
 
     @objc(removeOverrideShowType:)
@@ -42,9 +42,16 @@ final class DockVisibility: NSObject {
     /// the Dock's preferences. A finished change sets the override when the Dock has none (it was
     /// restarted), so an unfinished one goes first (REF-DEV-004).
     static func finishSizeChange() {
-        let size = CoreDockGetTileSize()
+        let size = tileSizeMessage(CoreDockGetTileSize())
         CoreDockSetTileSize(size, 0)
         CoreDockSetTileSize(size, 1)
         UserDefaults.standard.removeObject(forKey: dockOverrideKey)
+    }
+
+    /// The value that makes the Dock keep the size `CoreDockGetTileSize` gave: the Dock truncates the
+    /// size the message carries, so the whole size goes back half a point up (REF-DEV-004).
+    static func tileSizeMessage(_ size: Float) -> Float {
+        let points = (Double(size) * 112 + 16).rounded()
+        return Float((points - 16 + 0.5) / 112)
     }
 }
