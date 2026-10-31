@@ -11,6 +11,9 @@
 #     Chinese characters (REF-DEV-022), for the first of the two comparisons
 #   - with --menu-bar, also the menu bar, as overlay-shell-open and -close
 #     (REF-DEV-001, REF-ENV-005)
+#   - with --search-field, also the search field (the search-field-* scenes of
+#     the search spec), whose images are this project's own drawings and whose
+#     Chinese placeholder's glyphs are the system's (REF-DEV-022)
 # With --zoom <scale> --anchor <x>,<y> (the grid-animation-* scenes), every
 # icon, mini icon grid and name rectangle covers the whole area it sweeps while
 # the main grid layer zooms between 1 and <scale> about the anchor (points,
@@ -37,14 +40,15 @@
 # positions follow grid-items-scene.tsv (a folder takes the position of its
 # first app).
 #
-# Usage: tools/compare/grid-items-masks.sh [--chinese-names] [--menu-bar] [--zoom <scale> --anchor <x>,<y>] [--launch <title>]
+# Usage: tools/compare/grid-items-masks.sh [--chinese-names] [--menu-bar] [--search-field] [--zoom <scale> --anchor <x>,<y>] [--launch <title>]
 #        [--page-control] [--sweep-pages <scene file>]
 
 set -euo pipefail
 
-usage() { echo "usage: $0 [--chinese-names] [--menu-bar] [--zoom <scale> --anchor <x>,<y>] [--launch <title>] [--page-control] [--sweep-pages <scene file>]" >&2; exit 2; }
+usage() { echo "usage: $0 [--chinese-names] [--menu-bar] [--search-field] [--zoom <scale> --anchor <x>,<y>] [--launch <title>] [--page-control] [--sweep-pages <scene file>]" >&2; exit 2; }
 chinese=0
 menu_bar=0
+search_field=0
 zoom=
 anchor=
 launch=
@@ -54,6 +58,7 @@ while [[ $# -gt 0 ]]; do
     case $1 in
         --chinese-names) chinese=1 ;;
         --menu-bar) menu_bar=1 ;;
+        --search-field) search_field=1 ;;
         --zoom) [[ $# -ge 2 ]] || usage; zoom=$2; shift ;;
         --anchor) [[ $# -ge 2 ]] || usage; anchor=$2; shift ;;
         --launch) [[ $# -ge 2 ]] || usage; launch=$2; shift ;;
@@ -119,6 +124,14 @@ emit() {
         printf "--mask %d,%d,%d,%d\n", l, t, r - l, b - t
     }'
 }
+
+# --search-field: the field's frame in the main grid (0, 101, 1536, 859) (REF-GRID-004): x = midX - 125,
+# y = maxY - (0 + 35 + 25 - 10) with no notch and the top margin 35, 250 x 25 (REF-SEARCH-002).
+if ((search_field)); then
+    field_height=25
+    field_y=$((101 + 859 - (0 + 35 + field_height - 10)))
+    emit "$((1536 / 2 - 125))" "$((display_height - (field_y + field_height)))" 250 "$field_height"
+fi
 
 # A rectangle (x, y, w, h) inside the item layer at page position $1, as a --mask line.
 mask_in_cell() {
