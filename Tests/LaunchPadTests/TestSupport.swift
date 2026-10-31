@@ -1,4 +1,6 @@
+import CoreGraphics
 import Foundation
+import ImageIO
 import SQLite3
 import Testing
 @testable import LaunchPad
@@ -153,8 +155,29 @@ let testResources: Bundle = {
     try! FileManager.default.copyItem(at: resources.appendingPathComponent("LaunchPadLayout.plist"), to: directory.appendingPathComponent("LaunchPadLayout.plist"))
     try! FileManager.default.copyItem(at: resources.appendingPathComponent("zh_CN.lproj/Localizable.strings"),
                                       to: directory.appendingPathComponent("zh_CN.lproj/Localizable.strings"))
+    for (file, width) in testImageFiles {
+        writeTestPNG(width: width, to: directory.appendingPathComponent(file))
+    }
     return Bundle(path: directory.path)!
 }()
+
+/// Small images in `testResources` for the image cache, told apart by their widths:
+/// `lptest_image` at 1x and 2x, the others at 1x only.
+let testImageFiles: [(String, Int)] = [
+    ("lptest_image.png", 3), ("lptest_image@2x.png", 6), ("lptest_image_1x_only.png", 4), ("lptest_image_once.png", 5),
+]
+
+/// A white square PNG of the width, with alpha.
+func writeTestPNG(width: Int, to url: URL) {
+    let context = CGContext(data: nil, width: width, height: width, bitsPerComponent: 8, bytesPerRow: 0,
+                            space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+    context.setFillColor(gray: 1, alpha: 1)
+    context.fill(CGRect(x: 0, y: 0, width: width, height: width))
+    let destination = CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil)!
+    CGImageDestinationAddImage(destination, context.makeImage()!, nil)
+    CGImageDestinationFinalize(destination)
+}
 
 /// The research evidence directory (`research/…/notes/lp-model`) given by `LAUNCHPAD_ORIGINAL_DB`,
 /// for tests against the original's database.

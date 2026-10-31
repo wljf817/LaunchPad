@@ -830,6 +830,6 @@ final class LPAppManager: NSObject, @unchecked Sendable {
     }
 }
 
-/// The bundle that holds `LaunchPadLayout.plist` and the folder title strings: this app's, as the
-/// original uses Dock's. Tests point it at the sources' resource directory.
+/// The bundle that holds `LaunchPadLayout.plist`, the strings and the search field's images: this
+/// app's, as the original uses Dock's. Tests point it at the sources' resource directory.
 nonisolated(unsafe) var launchPadBundle = Bundle.main
