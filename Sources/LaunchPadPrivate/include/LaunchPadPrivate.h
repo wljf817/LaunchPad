@@ -184,6 +184,17 @@ extern NSString * const kCAFilterDarkenBlendMode;
 // QuartzCore in the macOS 27.0 SDK; checked on macOS 26.6.2 (25G83) when the item is pressed.
 extern NSString * const kCAFilterMultiplyColor;
 
+// ---------------------------------------------------------------------------
+// The search field (search-field).
+
+// A layer that shows the layer tree of a Core Animation context of another process. The search
+// field's _hostLayer is one; it hosts the text field the text input service draws (REF-SEARCH-001).
+// Its contextId comes with the service (sub-phase 3.3). A CALayer subclass exported by QuartzCore,
+// created with this class name on macOS 27.2 (26B123) and macOS 26.6.2 (25G83).
+@interface CALayerHost : CALayer
+@end
+
+
 // LaunchServices' record of an installed app; public on iOS, not declared on macOS.
 // Tells whether a scanned app is a web app (flag 0x1000, REF-LAYOUT-003).
 @interface LSApplicationRecord : NSObject
