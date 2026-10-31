@@ -1,3 +1,5 @@
+import CoreText
+import LaunchPadPrivate
 import os
 import QuartzCore
 
@@ -14,13 +16,53 @@ class ECSBLayer: ECPagerLayer, ECEventHandlingDelegate {
     /// others (REF-KEYBOARD-001).
     var keyDownHandled = false
     var mouseDragged = false
+    var _searchString: NSString?
+    var _noResultsContainerLayer: CALayer?
+    var _noResultsLayer: ECShadowTextLayer?
+    var _searchTextInputLayer: ECTextInputLayer?
 
+    /// Below everything, the "no results" container and its text (REF-SEARCH-006); last, the search
+    /// field (REF-SEARCH-001).
     @objc(initWithPager:scaleFactor:layoutRTL:)
     required init(pager: ECPager?, scaleFactor: Float, layoutRTL: Bool) {
         super.init(pager: pager, layoutRTL: layoutRTL)
         masksToBounds = false
+        _searchString = ""
         scrollLayer.masksToBounds = false
         self.scaleFactor = scaleFactor
+        let container = CALayer()
+        _noResultsContainerLayer = container
+        container.allowsGroupBlending = false
+        insertSublayer(container, at: 0)
+        let text = ECShadowTextLayer()
+        _noResultsLayer = text
+        text.string = launchPadBundle.localizedString(forKey: "No Results", value: "", table: nil)
+        // REF-SEARCH-006
+        text.opacity = 0
+        text.alignmentMode = .center
+        if let font = CTFontCreateUIFontForLanguage(CTFontUIFontType(rawValue: 103)!, 40, nil) {
+            text.font = font
+        }
+        text.fontSize = 40
+        text.foregroundColor = CGColor(gray: 52.0 / 255.0, alpha: 1)
+        text.compositingFilter = kCAFilterPlusL
+        text.textShadowColor = CGColor(gray: 0, alpha: 0.2)
+        text.textShadowOffset = CGSize(width: 0, height: -1)
+        text.textShadowBlur = 2
+        text.contentsScale = CGFloat(scaleFactor)
+        container.addSublayer(text)
+        // REF-SEARCH-001: 250 × 25, the search type.
+        let field = ECTextInputLayer(cgSize: CGSize(width: 250, height: 25), type: 1, scaleFactor: scaleFactor,
+                                     layoutRTL: layoutRTL, containerWindow: nil)
+        _searchTextInputLayer = field
+        field.fadeWhenNotActive = true
+        field.font = CTFontCreateUIFontForLanguage(CTFontUIFontType(rawValue: 103)!, 16, nil)
+        field.fontSize = 16
+        field.placeholderString = launchPadBundle.localizedString(forKey: "Search", value: "", table: nil) as NSString
+        field.foregroundColor = CGColor(gray: 1, alpha: 1)
+        field.eventDelegate = self
+        // Here the grid layer observes the field's `stringValue` (sub-phase 3.2).
+        addSublayer(field)
     }
 
     /// Only the initializer of `ECPager`, which `ECSBPager` replaces at once, makes an `ECSBLayer`
@@ -138,6 +180,15 @@ class ECSBLayer: ECPagerLayer, ECEventHandlingDelegate {
         // Right to left, an unsigned page count less one less the current page (REF-GRID-007).
         let index = layoutRTL ? UInt(bitPattern: wanted) &+ ~currentPageIndex : currentPageIndex
         scrollLayer.scroll(to: CGPoint(x: bounds.width * CGFloat(index), y: 0))
+        // REF-SEARCH-006: centered on the page rect, 10 larger than the text, which fills it.
+        let pageRect = CGRect(x: left, y: bottom, width: pageWidth, height: pageHeight)
+        if let container = _noResultsContainerLayer, let text = _noResultsLayer {
+            let size = text.preferredFrameSize()
+            container.frame = CGRect(x: (pageRect.midX - (size.width + 10) * 0.5).rounded(.down),
+                                     y: (pageRect.midY - (size.height + 10) * 0.5).rounded(.down),
+                                     width: size.width + 10, height: size.height + 10)
+            text.frame = container.bounds
+        }
         // REF-PAGING-003: hidden with visibility 1, or 2 or 3 and one page; otherwise while a folder is
         // shown (phase 5). Across the grid, 15 high, centered on half the bottom margin as set.
         let disabled = disableActions()
@@ -145,9 +196,20 @@ class ECSBLayer: ECPagerLayer, ECEventHandlingDelegate {
         let y = CGFloat(Int(bottomMargin * 0.5 - 7.5))
         controlLayer.frame = CGRect(x: 0, y: 0 <= y ? y : 0, width: bounds.width, height: 15)
         controlLayer.layout()
+        // REF-SEARCH-002: 250 × 25, centered at the top, 10 into the room left above the pages.
+        _searchTextInputLayer?.frame = CGRect(x: bounds.midX - 125, y: bounds.maxY - (notchHeight + top + 25 - 10),
+                                              width: 250, height: 25)
         if disabled {
             CATransaction.setDisableActions(false)
         }
+    }
+
+    @objc func searchTextInputLayer() -> ECTextInputLayer? {
+        _searchTextInputLayer
+    }
+
+    @objc func noResultsLayer() -> ECShadowTextLayer? {
+        _noResultsLayer
     }
 
     /// The icon size and the folder's mini icon size for the main grid (REF-GRID-006): the margins

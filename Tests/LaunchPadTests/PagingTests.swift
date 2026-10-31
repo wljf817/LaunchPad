@@ -193,12 +193,12 @@ struct PagingTests {
         CATransaction.commit()
     }
 
-    @Test("主网格 layer 的子 layer 依次是滚动 layer 和页码指示器；显示方式经 pager 设到 pager layer")
+    @Test("页码指示器紧跟在主网格 layer 的滚动 layer 之后；显示方式经 pager 设到 pager layer")
     func indicatorInTree() {
         let (grid, _) = makeGrid(pages: 3)
-        #expect(grid.layer.sublayers?.count == 2)
-        #expect(grid.layer.sublayers?[0] === grid.layer.scrollLayer)
-        #expect(grid.layer.sublayers?[1] === grid.layer.controlLayer)
+        #expect(grid.layer.sublayers?.count == 4)
+        #expect(grid.layer.sublayers?[1] === grid.layer.scrollLayer)
+        #expect(grid.layer.sublayers?[2] === grid.layer.controlLayer)
         grid.pagerControlVisibility = 3
         #expect(grid.pager.pagerControlVisibility == 3)
         #expect(grid.layer.pagerControlVisibility == 3)

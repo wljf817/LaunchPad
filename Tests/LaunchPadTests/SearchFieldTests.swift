@@ -351,3 +351,145 @@ struct SearchFieldTests {
         #expect(field._cancelSearchLayer?.opacity == 0.3)
     }
 }
+
+/// The search field and the "no results" layers in the main grid's layer (REF-SEARCH-001,
+/// REF-SEARCH-002, REF-SEARCH-006), and the field's reset after closing (REF-SEARCH-005).
+@MainActor
+@Suite(.serialized)
+struct SearchGridTests {
+    init() {
+        launchPadBundle = testResources
+    }
+
+    /// A one-page main grid laid out in bounds 1536 × `height`, with the margins of the original's
+    /// measurement: top 35, bottom 36, no zoom.
+    func makeGrid(height: CGFloat = 856, notchHeight: CGFloat = 0, scaleFactor: Float = 1,
+                  layoutRTL: Bool = false) -> ECSBSpringboard {
+        let grid = ECSBSpringboard(handler: PageSource(count: 1), numberOfRowsPerPage: 5, numberOfColumnsPerPage: 7,
+                                   scaleFactor: scaleFactor, layoutRTL: layoutRTL)
+        let saved = dockBar.display
+        defer { dockBar.display = saved }
+        dockBar.display = DisplayDescriptor(notchBounds: notchHeight == 0 ? .null
+                                                : CGRect(x: 600, y: 0, width: 336, height: notchHeight))
+        grid.invalidate()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        grid.layer.frame = CGRect(x: 0, y: 104, width: 1536, height: height)
+        (grid.leftMargin, grid.rightMargin, grid.topMargin, grid.bottomMargin) = (90, 90, 35, 36)
+        grid.zoomFactor = 0
+        grid.layout()
+        CATransaction.commit()
+        return grid
+    }
+
+    @Test("子 layer 依次是「无结果」容器、滚动 layer、页码指示器、搜索框")
+    func sublayers() throws {
+        let layer = makeGrid().layer
+        let container = try #require(layer.sublayers?.first)
+        let field = try #require(layer.searchTextInputLayer())
+        let text = try #require(layer.noResultsLayer())
+        #expect(layer.sublayers?.map(ObjectIdentifier.init) ==
+                    [container, layer.scrollLayer, layer.controlLayer, field].map(ObjectIdentifier.init))
+        #expect(NSStringFromClass(type(of: container)) == "CALayer")
+        #expect(container.sublayers?.map(ObjectIdentifier.init) == [ObjectIdentifier(text)])
+        #expect(!container.allowsGroupBlending)
+    }
+
+    @Test("「无结果」的文字 layer 按 REF-SEARCH-006 设好，开始时透明")
+    func noResultsLook() throws {
+        let text = try #require(makeGrid(scaleFactor: 2).layer.noResultsLayer())
+        #expect(text.string as? String == "无结果")
+        let font = try #require(text.font.map { $0 as! CTFont })
+        #expect(CTFontCopyPostScriptName(font) as String == ".SFNS-Light")
+        #expect(CTFontGetSize(font) == 40)
+        #expect(text.fontSize == 40)
+        let gray: [CGFloat] = [52.0 / 255.0, 1]
+        #expect(text.foregroundColor?.components == gray)
+        #expect(text.compositingFilter as? String == "plusL")
+        let shadow: [CGFloat] = [0, 0.2]
+        #expect((text.textShadowColor as! CGColor?)?.components == shadow)
+        #expect(text.textShadowOffset == CGSize(width: 0, height: -1))
+        #expect(text.textShadowBlur == 2)
+        #expect(text.alignmentMode == .center)
+        #expect(text.opacity == 0)
+        #expect(text.contentsScale == 2)
+    }
+
+    @Test("搜索框按 REF-SEARCH-001 设好，事件代理是主网格 layer")
+    func fieldSetup() throws {
+        let layer = makeGrid(scaleFactor: 2).layer
+        let field = try #require(layer.searchTextInputLayer())
+        #expect(field.fadeWhenNotActive)
+        let font = try #require(field.font.map { $0 as! CTFont })
+        #expect(CTFontCopyPostScriptName(font) as String == ".SFNS-Light")
+        #expect(CTFontGetSize(font) == 16)
+        #expect(field.fontSize == 16)
+        #expect(field.placeholderString == "搜索")
+        #expect(field._placeholderLayer?.string as? String == "搜索")
+        #expect(field.foregroundColor == CGColor(gray: 1, alpha: 1))
+        #expect(field.scaleFactor == 2)
+        #expect(field.contentsScale == 2)
+        #expect(field.eventDelegate === layer)
+        #expect(field.stringValue == nil && !field.hasFocus && !field.textFieldActive)
+    }
+
+    @Test("从右到左的主网格里，搜索框的放大镜在占位文字右边")
+    func fieldRightToLeft() throws {
+        let field = try #require(makeGrid(layoutRTL: true).layer.searchTextInputLayer())
+        // REF-SEARCH-002, not active, right to left, with the placeholder 33 wide.
+        #expect(field._placeholderLayer?.frame.minX == 96.5)
+        #expect(field._magnifyLayer?.frame.minX == 137.5)
+    }
+
+    @Test("1536 × 856、上边距 35 时搜索框是 (643, 806, 250, 25)；有刘海时下移刘海的高度")
+    func fieldFrame() throws {
+        #expect(makeGrid().layer.searchTextInputLayer()?.frame == CGRect(x: 643, y: 806, width: 250, height: 25))
+        #expect(makeGrid(notchHeight: 32).layer.searchTextInputLayer()?.frame ==
+                    CGRect(x: 643, y: 774, width: 250, height: 25))
+    }
+
+    @Test("「无结果」容器在页的矩形中央、比文字大 10，文字 layer 铺满容器")
+    func noResultsFrame() throws {
+        let layer = makeGrid().layer
+        let text = try #require(layer.noResultsLayer())
+        // The original's measurement: the Chinese text 115 × 48 (REF-SEARCH-006).
+        try #require(text.preferredFrameSize() == CGSize(width: 115, height: 48))
+        #expect(layer.sublayers?.first?.frame == CGRect(x: 705, y: 384, width: 125, height: 58))
+        #expect(text.frame == CGRect(x: 0, y: 0, width: 125, height: 58))
+    }
+
+    /// Records the keys a layer asks its delegate actions for; none are asked while actions are
+    /// disabled.
+    final class ActionRecorder: NSObject, CALayerDelegate {
+        var keys: [String] = []
+
+        func action(for layer: CALayer, forKey event: String) -> (any CAAction)? {
+            keys.append(event)
+            return nil
+        }
+    }
+
+    @Test("布局时搜索框的 frame 不带隐式动画，「无结果」容器的带")
+    func layoutActions() throws {
+        let grid = makeGrid()
+        let field = try #require(grid.layer.searchTextInputLayer())
+        let container = try #require(grid.layer.sublayers?.first)
+        let fieldRecorder = ActionRecorder()
+        let containerRecorder = ActionRecorder()
+        field.delegate = fieldRecorder
+        container.delegate = containerRecorder
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        grid.layer.frame.size.height = 900
+        CATransaction.commit()
+        let saved = dockBar.display
+        defer { dockBar.display = saved }
+        dockBar.display = DisplayDescriptor(notchBounds: .null)
+        CATransaction.begin()
+        grid.layout()
+        CATransaction.commit()
+        #expect(field.frame.minY == 850)
+        #expect(fieldRecorder.keys.isEmpty)
+        #expect(containerRecorder.keys.contains("position"))
+    }
+}
