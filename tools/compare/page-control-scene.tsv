@@ -1,0 +1,27 @@
+# The second page of the page-control-* scenes (paging spec, "翻页的逐帧对比"),
+# in order: 21 test apps, names in Latin letters only. Columns: title, folder
+# title (always empty here). Every app is a minimal bundle
+# /Applications/LPPageScene/<title>.app with bundle identifier
+# io.github.wljf817.lptest.page.<line number among the apps, from 1>. The
+# first page is grid-items-scene.tsv's.
+Atlas
+Bolt
+Cedar Notes
+Draft Room
+Echo Player
+Fern
+Glyph Studio
+Harbor
+Ink Well
+Juniper Tasks
+Kite
+Lumen
+Morse Code Trainer
+Nimbus
+Orbit Planner
+Pixel Forge
+Quill
+Relay
+Summit Tracker Professional Edition
+Tide
+Umbra

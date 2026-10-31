@@ -1,0 +1,55 @@
+# The first page of the grid-items-still scene (grid spec, "打开后的静止画面"),
+# in order: 33 test apps and two folders. Columns: title, folder title (empty
+# for an app on the page). The apps of a folder follow each other; the folder
+# takes the page position of its first app. Every app is a minimal bundle
+# /Applications/LPGridScene/<title>.app with bundle identifier
+# io.github.wljf817.lptest.grid.<line number among the apps, from 1>.
+A
+Go
+Notes Lab
+Calc
+Photo Booth Pro
+Mail Desk
+Typography qjgp
+App 2048
+测试应用
+Alpha	Few
+Beta	Few
+Gamma	Few
+Delta	Few
+LPGrid Application With A Very Long Name
+Maps Plus
+Weather Station
+TextPad
+Studio
+Clock Face
+Sketch Board
+Reader
+Dictionary Pro
+Chess Club
+Voice Memo Box
+Terminal X
+Finder Tools
+One	A Folder Whose Title Is Far Too Long
+Two	A Folder Whose Title Is Far Too Long
+Three	A Folder Whose Title Is Far Too Long
+Four	A Folder Whose Title Is Far Too Long
+Five	A Folder Whose Title Is Far Too Long
+Six	A Folder Whose Title Is Far Too Long
+Seven	A Folder Whose Title Is Far Too Long
+Eight	A Folder Whose Title Is Far Too Long
+Nine	A Folder Whose Title Is Far Too Long
+Ten	A Folder Whose Title Is Far Too Long
+Eleven	A Folder Whose Title Is Far Too Long
+Twelve	A Folder Whose Title Is Far Too Long
+Calendar Day
+Stock Ticker
+News Today
+Podcasts Hub
+Music Mixer
+Home Kit Lab
+Shortcuts Pro
+Preview Plus
+Book Shelf
+Freeform Board
+Q
