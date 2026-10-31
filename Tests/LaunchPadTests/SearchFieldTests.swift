@@ -492,4 +492,54 @@ struct SearchGridTests {
         #expect(fieldRecorder.keys.isEmpty)
         #expect(containerRecorder.keys.contains("position"))
     }
+
+    // MARK: - After closing (REF-SEARCH-005)
+
+    /// A controller whose search field has a string, focus and is active, laid out at 250 × 25, with
+    /// the overlay container in a window's layer.
+    func makeClosingController() throws -> (Springboard, ECTextInputLayer, CALayer) {
+        let controller = Springboard()
+        let field = try #require(controller.springboard.layer.searchTextInputLayer())
+        field.frame = CGRect(x: 0, y: 0, width: 250, height: 25)
+        field.stringValue = "a"
+        field.hasFocus = true
+        let root = CALayer()
+        root.addSublayer(controller.layer)
+        return (controller, field, root)
+    }
+
+    @Test("关闭动画结束、仍然关着时，搜索框没有文字、没有焦点、没激活，回到没激活的布局，不带动画")
+    func resetAfterClosing() throws {
+        let (controller, field, root) = try makeClosingController()
+        let placeholder = try #require(field._placeholderLayer)
+        let magnifier = try #require(field._magnifyLayer)
+        let cancel = try #require(field._cancelSearchLayer)
+        try #require(field.textFieldActive && placeholder.isHidden && magnifier.frame.minX == 7)
+        let recorder = ActionRecorder()
+        for layer in [field, placeholder, magnifier, cancel] {
+            layer.delegate = recorder
+        }
+        controller._cleanupAfterExitAnimation(nil, openCount: controller.openCount)
+        #expect(field.stringValue == "")
+        #expect(!field.hasFocus)
+        #expect(!field.textFieldActive)
+        #expect(!placeholder.isHidden)
+        #expect(cancel.isHidden)
+        // REF-SEARCH-002, not active, left to right, with the placeholder 33 wide.
+        #expect(magnifier.frame.minX == 100.5)
+        #expect(placeholder.frame.minX == 120.5)
+        #expect(recorder.keys.isEmpty)
+        #expect(root.sublayers == nil)
+    }
+
+    @Test("覆盖层已经重新打开时不复位搜索框")
+    func noResetWhenReopened() throws {
+        let (controller, field, root) = try makeClosingController()
+        controller._visible = true
+        controller._cleanupAfterExitAnimation(nil, openCount: controller.openCount)
+        #expect(field.stringValue == "a")
+        #expect(field.hasFocus)
+        #expect(field.textFieldActive)
+        #expect(root.sublayers?.first === controller.layer)
+    }
 }

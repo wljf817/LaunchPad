@@ -934,7 +934,15 @@ class Springboard: NSObject, ECModalEventHandler, ECEventHandlingDelegate, ECSBD
         let disabled = disableActions()
         springboard.layer.transform = CATransform3DIdentity  // REF-OVERLAY-007
         if !_visible {
+            // REF-SEARCH-005
+            if let field = springboard.layer.searchTextInputLayer() {
+                field.stringValue = ""
+                field.hasFocus = false
+                field.textFieldActive = false
+            }
+            // Leaving the filtering comes with sub-phase 3.2.
             layer.removeFromSuperlayer()
+            // Ending Launchpad's drag state comes with phase 4.
         }
         desktopLayer?.removeFromSuperlayer()
         if disabled {
