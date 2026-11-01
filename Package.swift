@@ -53,5 +53,9 @@ let package = Package(
             dependencies: ["LaunchPad"],
             resources: [.copy("Fixtures")]
         ),
+        .testTarget(
+            name: "LaunchPadECTITests",
+            dependencies: ["LaunchPadECTI"]
+        ),
     ]
 )
