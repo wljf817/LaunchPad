@@ -520,6 +520,76 @@ class Springboard: NSObject, ECModalEventHandler, ECEventHandlingDelegate, ECSBD
         }
     }
 
+    // MARK: - Search (REF-SEARCH-009)
+
+    /// `NSNotFound` when the title does not match the term, as it is or in lowercase; 0 when it does
+    /// (the original's value for a match is not used).
+    @objc(_wordFromTitle:matchesTerm:)
+    func _wordFromTitle(_ title: String, matchesTerm term: String) -> UInt {
+        let result = match(title: title, term: term)
+        guard result == UInt(NSNotFound) else { return result }
+        return match(title: (title as NSString).lowercased, term: term)
+    }
+
+    /// One try of the match, steps 1–6 of REF-SEARCH-009.
+    private func match(title: String, term: String) -> UInt {
+        let string = title as NSString
+        let options: NSString.CompareOptions = [.caseInsensitive, .diacriticInsensitive]
+        func startsWith(_ string: NSString, _ prefix: String) -> Bool {
+            let range = string.range(of: prefix, options: options)
+            return range.location == 0 && range.length != 0
+        }
+        // 1. The localized words, each split where a lowercase letter is followed by an uppercase one.
+        let pieces = NSMutableArray()
+        string.enumerateSubstrings(in: NSRange(location: 0, length: string.length), options: [.byWords, .localized]) { substring, _, _, _ in
+            guard let substring = substring as NSString? else { return }
+            let split = substring.replacingOccurrences(of: "([a-z])([A-Z])", with: "$1 $2", options: .regularExpression,
+                                                       range: NSRange(location: 0, length: substring.length))
+            if split.isEmpty {
+                pieces.add(substring)
+            } else {
+                pieces.addObjects(from: split.components(separatedBy: " "))
+            }
+        }
+        // 2. Runs of single uppercase letters become one word.
+        let uppercase = CharacterSet.uppercaseLetters
+        let words = NSMutableArray(capacity: pieces.count)
+        var pending: NSString?
+        for case let piece as NSString in pieces {
+            if piece.length == 1, piece.rangeOfCharacter(from: uppercase).length != 0 {
+                pending = pending.map { $0.appending(piece as String) as NSString } ?? piece
+            } else {
+                if let flushed = pending, flushed.length != 0 {
+                    words.add(flushed)
+                    pending = nil
+                }
+                words.add(piece)
+            }
+        }
+        if let pending, pending.length != 0 {
+            words.add(pending)
+        }
+        // 3. The title starts with the term.
+        if startsWith(string, term) {
+            return 0
+        }
+        // 4. A word starts with the term.
+        for case let word as NSString in words where startsWith(word, term) {
+            return 0
+        }
+        // 5. The term without spaces is the first letters of the first words.
+        let compact = (term as NSString).replacingOccurrences(of: " ", with: "") as NSString
+        if compact.length > 1, compact.length <= words.count,
+           (0..<compact.length).allSatisfy({ startsWith(words[$0] as! NSString, compact.substring(with: NSRange(location: $0, length: 1))) }) {
+            return 0
+        }
+        // 6. The title, or the title without spaces, starts with the term without spaces.
+        if startsWith(string, compact as String) {
+            return 0
+        }
+        return startsWith(string.replacingOccurrences(of: " ", with: "") as NSString, compact as String) ? 0 : UInt(NSNotFound)
+    }
+
     // MARK: - Events (REF-OVERLAY-009, REF-OVERLAY-010)
 
     /// An event of the process while Launchpad gets the events first: dispatched in Launchpad's window
