@@ -17,12 +17,19 @@
 //     Samples the on-screen list at <hz> for <seconds> and writes one JSON
 //     line per sample with t and, for every on-screen window owned by <pid>,
 //     its number, layer, alpha, bounds and on-screen index.
+//   window-list processes <seconds> <hz> <name>
+//     Samples at <hz> for <seconds> and writes one JSON line per sample with t
+//     and, for every running process whose name (proc_name) is <name>, its pid (proc_name gives at
+//     most 31 characters: a longer <name> matches a process whose name is its first 31)
+//     and every window it owns in the full list (kCGWindowListOptionAll): its
+//     number, layer, alpha, bounds and whether it is on screen.
 //
 // t is CACurrentMediaTime() in seconds, the clock the Frida scripts in
 // tools/re/frida/ record in the target process.
 
 import AppKit
 import CoreGraphics
+import Darwin
 import QuartzCore
 
 func json(_ obj: Any) -> String {
@@ -53,7 +60,7 @@ func app(_ a: NSRunningApplication?) -> Any {
 
 let args = CommandLine.arguments
 guard args.count >= 2 else {
-    FileHandle.standardError.write("usage: window-list list [label] | sample <seconds> <hz> <pid>\n".data(using: .utf8)!)
+    FileHandle.standardError.write("usage: window-list list [label] | sample <seconds> <hz> <pid> | processes <seconds> <hz> <name>\n".data(using: .utf8)!)
     exit(2)
 }
 
@@ -99,6 +106,51 @@ case "sample":
             ])
         }
         print(json(["type": "sample", "t": t, "windows": out]))
+        next += 1.0 / hz
+        let wait = next - CACurrentMediaTime()
+        if wait > 0 { usleep(useconds_t(wait * 1_000_000)) }
+    }
+case "processes":
+    guard args.count == 5, let seconds = Double(args[2]), let hz = Double(args[3]) else {
+        FileHandle.standardError.write("usage: window-list processes <seconds> <hz> <name>\n".data(using: .utf8)!)
+        exit(2)
+    }
+    let name = args[4]
+    func pids() -> [Int32] {
+        var buffer = [Int32](repeating: 0, count: 4096)
+        let count = buffer.withUnsafeMutableBytes { proc_listallpids($0.baseAddress, Int32($0.count)) }
+        var out: [Int32] = []
+        var nameBuffer = [CChar](repeating: 0, count: 256)
+        for pid in buffer.prefix(Int(max(count, 0))) where pid > 0 {
+            if proc_name(pid, &nameBuffer, UInt32(nameBuffer.count)) > 0, String(cString: nameBuffer) == String(name.prefix(31)) {
+                out.append(pid)
+            }
+        }
+        return out.sorted()
+    }
+    let start = CACurrentMediaTime()
+    var next = start
+    while true {
+        let t = CACurrentMediaTime()
+        if t - start > seconds { break }
+        let found = pids()
+        let list = found.isEmpty ? [] : windows(.optionAll)
+        var processes: [[String: Any]] = []
+        for pid in found {
+            var owned: [[String: Any]] = []
+            for w in list where (w[kCGWindowOwnerPID as String] as? Int32) == pid {
+                owned.append([
+                    "wid": w[kCGWindowNumber as String] ?? NSNull(),
+                    "layer": w[kCGWindowLayer as String] ?? NSNull(),
+                    "alpha": w[kCGWindowAlpha as String] ?? NSNull(),
+                    "bounds": plain(w[kCGWindowBounds as String] ?? NSNull()),
+                    "onScreen": w[kCGWindowIsOnscreen as String] ?? false,
+                ])
+            }
+            processes.append(["pid": pid, "windows": owned])
+        }
+        print(json(["type": "processes", "t": t, "processes": processes]))
+        fflush(stdout)
         next += 1.0 / hz
         let wait = next - CACurrentMediaTime()
         if wait > 0 { usleep(useconds_t(wait * 1_000_000)) }
