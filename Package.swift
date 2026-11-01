@@ -31,6 +31,23 @@ let package = Package(
                 .unsafeFlags(["-F/System/Library/PrivateFrameworks", "-framework", "SkyLight", "-framework", "IconServices"]),
             ]
         ),
+        // The text input service, an XPC service in the background process's bundle (REF-SEARCH-011).
+        .executableTarget(
+            name: "LaunchPadECTI",
+            dependencies: ["LaunchPadECTIPrivate"],
+            // MainMenu.xib is compiled into the service's bundle by scripts/build-app.sh.
+            exclude: ["Resources"]
+        ),
+        // Declarations of private system interfaces the original service uses.
+        .target(
+            name: "LaunchPadECTIPrivate",
+            linkerSettings: [
+                .linkedFramework("AppKit"),
+                .linkedFramework("Carbon"),
+                .linkedFramework("CoreGraphics"),
+                .linkedFramework("CoreText"),
+            ]
+        ),
         .testTarget(
             name: "LaunchPadTests",
             dependencies: ["LaunchPad"],
