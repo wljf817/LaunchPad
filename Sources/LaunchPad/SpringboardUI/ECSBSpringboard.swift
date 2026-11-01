@@ -18,6 +18,10 @@ final class ECSBSpringboard: NSObject, ECPagerSource, ECSBGridActionHandling, EC
     var scaleFactor: Float
     var layoutRTL: Bool
     var _visible = false
+    /// Set by `-filterUsingItems:` and cleared by `-clearFilteredItems` (REF-SEARCH-010).
+    var _filtering = false
+    /// The current page when filtering began, gone back to when it ends (REF-SEARCH-010).
+    var _filteredPageIndex: UInt = 0
 
     @objc(initWithHandler:numberOfRowsPerPage:numberOfColumnsPerPage:scaleFactor:layoutRTL:)
     init(handler: ECSBDataSource, numberOfRowsPerPage: UInt, numberOfColumnsPerPage: UInt, scaleFactor: Float,
@@ -97,6 +101,12 @@ final class ECSBSpringboard: NSObject, ECPagerSource, ECSBGridActionHandling, EC
         set { pager.editing = newValue }
     }
 
+    /// The pager's (REF-SEARCH-010).
+    @objc var filtering: Bool {
+        get { pager.filtering }
+        set { pager.filtering = newValue }
+    }
+
     @objc var layer: ECSBLayer {
         pager.layer as! ECSBLayer
     }
@@ -158,6 +168,65 @@ final class ECSBSpringboard: NSObject, ECPagerSource, ECSBGridActionHandling, EC
         }
         item.items = pageItems
         pager.invalidate()
+        if disabled {
+            CATransaction.setDisableActions(false)
+        }
+    }
+
+    /// Shows the results the controller's search pages hold (REF-SEARCH-010). The first time, the
+    /// pager starts filtering and the current page is kept and left for the first one without
+    /// animation. "No results" fades in with the implicit animation when there are none, and is hidden
+    /// without animation when there are some. Then the pages are made again and the current page's
+    /// first item is selected (REF-KEYBOARD-003).
+    @objc(filterUsingItems:)
+    func filterUsingItems(_ items: NSArray?) {
+        if !_filtering {
+            _filtering = true
+            pager.filtering = true
+            _filteredPageIndex = pager.currentPageIndex
+            if pager.currentPageIndex != 0 {
+                let disabled = disableActions()
+                pager.currentPageIndex = 0
+                if disabled {
+                    CATransaction.setDisableActions(false)
+                }
+            }
+        }
+        let noResultsLayer = layer.noResultsLayer()
+        if items == nil || items?.count == 0 {
+            noResultsLayer?.opacity = 1
+        } else if noResultsLayer?.opacity != 0 {
+            let disabled = disableActions()
+            noResultsLayer?.opacity = 0
+            if disabled {
+                CATransaction.setDisableActions(false)
+            }
+        }
+        invalidate()
+        if let first = (currentPage as? ECSBPage)?.item.items?.firstObject as? ECSBItem {
+            pager.selectedItem = first
+        }
+    }
+
+    /// Leaves the search results (REF-SEARCH-010). While filtering, the pager stops filtering and
+    /// deleting, and the search field's text and "no results" are cleared without animation. In every
+    /// case the pages are made again from the layout and the page kept by `-filterUsingItems:` becomes
+    /// current without animation.
+    @objc func clearFilteredItems() {
+        if _filtering {
+            _filtering = false
+            pager.filtering = false
+            pager.deleting = false
+            let disabled = disableActions()
+            layer.searchTextInputLayer()?.stringValue = ""
+            layer.noResultsLayer()?.opacity = 0
+            if disabled {
+                CATransaction.setDisableActions(false)
+            }
+        }
+        invalidate()
+        let disabled = disableActions()
+        pager.currentPageIndex = _filteredPageIndex
         if disabled {
             CATransaction.setDisableActions(false)
         }
@@ -259,7 +328,8 @@ final class ECSBSpringboard: NSObject, ECPagerSource, ECSBGridActionHandling, EC
         item.items
     }
 
-    /// Loads the page's items, then makes its page and grid layer.
+    /// Loads the page's items, then makes its page and grid layer, which centers a single row while
+    /// filtering.
     func makePage(for pager: ECPager, at index: UInt) -> ECPage? {
         guard let pageItems = item.items, index < pageItems.count,
               let pageItem = pageItems[Int(index)] as? ECSBPageItem else { return nil }
@@ -270,6 +340,7 @@ final class ECSBSpringboard: NSObject, ECPagerSource, ECSBGridActionHandling, EC
         page.handler = handler
         let gridLayer = ECSBGridLayer(layerSource: page, rows: Int(numberOfRowsPerPage), columns: Int(numberOfColumnsPerPage),
                                       scaleFactor: scaleFactor, layoutRTL: layoutRTL)
+        gridLayer.centerSingleRow = self.pager.filtering  // REF-SEARCH-010
         page.layer = gridLayer
         return page
     }

@@ -13,6 +13,8 @@ class ECSBPager: ECPager {
     var _selectedItem: ECSBItem?
     var scaleFactor: Float = 0
     var _editing = false
+    var _filtering = false
+    var _deleting = false
     var _visible = false
 
     @objc(initWithPagerSource:scaleFactor:layoutRTL:)
@@ -76,6 +78,25 @@ class ECSBPager: ECPager {
             } else {
                 delegate?.didEndEditing?()
             }
+        }
+    }
+
+    /// Set while the main grid shows search results; read when a page is made (REF-SEARCH-010) and
+    /// while an item is dragged (phase 4).
+    @objc var filtering: Bool {
+        @objc(isFiltering) get { _filtering }
+        set { _filtering = newValue }
+    }
+
+    /// Nothing when the flag does not change. A change is passed to the pages with phase 4; with a
+    /// folder shown the folder's pager takes it (phase 5). The handler is told
+    /// `-didBeginDeleting` or `-didEndDeleting` afterwards when it responds, which no class does.
+    @objc var deleting: Bool {
+        get { _deleting }
+        set {
+            guard _deleting != newValue else { return }
+            _deleting = newValue
+            // Passing the flag to the pages comes with phase 4.
         }
     }
 
