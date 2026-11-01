@@ -160,4 +160,70 @@ struct SearchFilterTests {
         #expect(controller.value(forKey: "items", ofItem: nil, withInfo: nil) === root.children)
         #expect(controller.value(forKey: "items", ofItem: folder, withInfo: nil) === folder.children)
     }
+
+    @Test("搜索时 -performCancel 只清空过滤，覆盖层仍打开、回到进入过滤前的页；再调一次才关闭")
+    func cancelWhileSearching() {
+        let controller = QuietSpringboard()
+        let root = LPRoot()
+        for title in ["Alpha", "Beta", "Gamma"] {
+            let page = LPPage(items: nil)
+            page.children.add(makeApp(title))
+            root.children.add(page)
+        }
+        controller.rootPage = root
+        controller.springboard.invalidate()
+        controller.springboard.currentPageIndex = 1
+        controller.setVisible(true, reason: "test")
+        defer {
+            controller._purgeItemsTimer?.cancel()
+            controller._purgeItemsTimer = nil
+        }
+        controller.searchTextChanged("al")
+        #expect(controller.springboard.filtering)
+        #expect(controller.springboard.currentPageIndex == 0)
+
+        controller.performCancel()
+        #expect(!controller.searching)
+        #expect(!controller.springboard.filtering)
+        #expect(controller.springboard.currentPageIndex == 1)
+        #expect(controller.visible)
+        #expect(controller.animations == [true])
+
+        controller.performCancel()
+        #expect(!controller.visible)
+        #expect(controller.animations == [true, false])
+    }
+
+    @Test("过滤中关闭：清理结束时不在搜索中、不在过滤中，当前页是进入过滤前的页")
+    func closeWhileFiltering() async throws {
+        let controller = QuietSpringboard()
+        let root = LPRoot()
+        for title in ["Alpha", "Beta", "Gamma"] {
+            let page = LPPage(items: nil)
+            page.children.add(makeApp(title))
+            root.children.add(page)
+        }
+        controller.rootPage = root
+        controller.springboard.invalidate()
+        controller.springboard.currentPageIndex = 1
+        controller.setVisible(true, reason: "test")
+        defer {
+            controller._purgeItemsTimer?.cancel()
+            controller._purgeItemsTimer = nil
+        }
+        let field = try #require(controller.springboard.layer.searchTextInputLayer())
+        field.stringValue = "al"
+        let deadline = Date().addingTimeInterval(5)
+        while !controller.searching {
+            try #require(Date() < deadline, "the search did not run")
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        try #require(controller.springboard.filtering && controller.springboard.currentPageIndex == 0)
+
+        controller.setVisible(false, reason: "test")
+        controller._cleanupAfterExitAnimation(nil, openCount: controller.openCount)
+        #expect(!controller.searching)
+        #expect(!controller.springboard.filtering)
+        #expect(controller.springboard.currentPageIndex == 1)
+    }
 }

@@ -750,10 +750,12 @@ class Springboard: NSObject, ECModalEventHandler, ECEventHandlingDelegate, ECSBD
         return false
     }
 
-    /// Cancels the first thing there is to cancel: here only Launchpad itself; the drag, delete mode,
-    /// the folder and the search come first in later phases.
+    /// Cancels the first thing there is to cancel: the search, then Launchpad itself (REF-OVERLAY-010).
+    /// The gesture, the drag and delete mode (phase 4) and the folder (phase 5) come before the search.
     @objc func performCancel() {
-        if _visible {
+        if _searching {
+            searchTextCleared()
+        } else if _visible {
             setVisible(false, reason: "perform cancel while visible")
         }
     }
@@ -1076,7 +1078,11 @@ class Springboard: NSObject, ECModalEventHandler, ECEventHandlingDelegate, ECSBD
                 field.hasFocus = false
                 field.textFieldActive = false
             }
-            // Leaving the filtering comes with sub-phase 3.2.
+            // Clearing the text above already left the filtering through the grid's observation of
+            // the field (REF-SEARCH-008), so this finds it filtering only when that did not run.
+            if springboard.filtering {
+                springboard.clearFilteredItems()
+            }
             layer.removeFromSuperlayer()
             // Ending Launchpad's drag state comes with phase 4.
         }
