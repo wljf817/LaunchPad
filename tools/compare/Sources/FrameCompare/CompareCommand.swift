@@ -9,10 +9,11 @@ public enum CompareCommand {
     }
 
     public static let usage = """
-        usage: frame-compare compare <reference.mov> <candidate.mov> --pixel-threshold <0-255> --max-ratio <0-1> [--mask x,y,w,h]... --out <dir> [--all-frames]
+        usage: frame-compare compare <reference.mov> <candidate.mov> --pixel-threshold <0-255> --max-ratio <0-1> [--mask x,y,w,h]... [--timeline-mask x,y,w,h]... --out <dir> [--all-frames]
                frame-compare still   <reference.mov> <candidate.mov> --pixel-threshold <0-255> --max-ratio <0-1> [--mask x,y,w,h]... --out <dir> [--all-frames]
                frame-compare inspect <recording.mov> --pixel-threshold <0-255> [--mask x,y,w,h]...
-        Masks are rectangles in points, origin at the top left. Each .mov needs its .json beside it.
+        Masks are rectangles in points, origin at the top left. A timeline mask is masked only when finding
+        the anchor and the last change, not when comparing. Each .mov needs its .json beside it.
         Exit status: 0 pass, 1 fail, 2 invalid input.
         """
 
@@ -22,6 +23,7 @@ public enum CompareCommand {
         var pixelThreshold: Int?
         var maxRatio: Double?
         var masks: [PointRect] = []
+        var timelineMasks: [PointRect] = []
         var out: String?
         var allFrames = false
     }
@@ -52,6 +54,10 @@ public enum CompareCommand {
                 let text = try value(argument)
                 guard let rect = PointRect(text) else { throw InvalidInput("bad --mask \(text); expected x,y,w,h") }
                 options.masks.append(rect)
+            case "--timeline-mask":
+                let text = try value(argument)
+                guard let rect = PointRect(text) else { throw InvalidInput("bad --timeline-mask \(text); expected x,y,w,h") }
+                options.timelineMasks.append(rect)
             case "--out":
                 options.out = try value(argument)
             case "--all-frames":
@@ -88,7 +94,10 @@ public enum CompareCommand {
             }
             let reference = try await Recording.load(URL(fileURLWithPath: options.paths[0]))
             let candidate = try await Recording.load(URL(fileURLWithPath: options.paths[1]))
-            let parameters = CompareParameters(pixelThreshold: options.pixelThreshold!, maxRatio: options.maxRatio!, masks: options.masks)
+            let parameters = CompareParameters(
+                pixelThreshold: options.pixelThreshold!, maxRatio: options.maxRatio!, masks: options.masks,
+                timelineMasks: options.timelineMasks
+            )
             var report = options.subcommand == "compare"
                 ? try Comparison.compare(reference, candidate, parameters: parameters)
                 : try Comparison.still(reference, candidate, parameters: parameters)

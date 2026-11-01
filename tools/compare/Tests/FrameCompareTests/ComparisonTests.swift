@@ -62,6 +62,32 @@ struct ComparisonTests {
         #expect(report.pass)
     }
 
+    @Test func timelineMasksFindTheTimelineButAreCompared() throws {
+        // Levels 10, 20 from 1.1 s, then a pixel at (0, 0) that blinks until the end.
+        func blinking(_ blinkOn: [Bool]) -> Recording {
+            var frames = [solid(0), solid(10), solid(20)]
+            var times = [0.0, 1.1, 1.1 + period]
+            for (i, on) in blinkOn.enumerated() {
+                var frame = solid(20)
+                if on { frame.setPixel(x: 0, y: 0, blue: 255, green: 255, red: 255) }
+                frames.append(frame)
+                times.append(1.1 + Double(2 + i) * period)
+            }
+            return recording(frames, metadata(frameTimes: times, stop: times.last! + 0.4))
+        }
+        let reference = blinking([true, false, true, false, true, false, true, false])
+        let candidate = blinking([false, true, false, true, false, true, false, true])
+        let plain = CompareParameters(pixelThreshold: 0, maxRatio: 0, masks: [])
+        #expect(throws: InvalidInput.self) { try Comparison.compare(reference, candidate, parameters: plain) }
+        let timeline = [PointRect(x: 0, y: 0, width: 1, height: 1)]
+        let parameters = CompareParameters(pixelThreshold: 0, maxRatio: 0, masks: [], timelineMasks: timeline)
+        let report = try Comparison.compare(reference, candidate, parameters: parameters)
+        #expect(report.referenceTimeline?.lastChangeFrame == 2)
+        #expect(report.samples.map(\.offset) == [-1, 0, 1, 2])
+        #expect(report.samples.map(\.metrics.overThresholdCount) == [0, 0, 0, 1])
+        #expect(!report.pass)
+    }
+
     @Test func oneSampleOverToleranceFails() throws {
         let reference = animation(start: 1.1, levels: [10, 20, 30])
         var candidate = reference

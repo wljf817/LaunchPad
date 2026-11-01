@@ -84,6 +84,9 @@ public struct Report: Codable, Sendable {
         lines.append("candidate: \(candidate.path)")
         let masks = parameters.masks.isEmpty ? "none" : parameters.masks.map(\.description).joined(separator: " ")
         lines.append("pixel threshold \(parameters.pixelThreshold), max ratio \(parameters.maxRatio), masks \(masks)")
+        if !parameters.timelineMasks.isEmpty {
+            lines.append("timeline masks \(parameters.timelineMasks.map(\.description).joined(separator: " "))")
+        }
         for (label, timeline) in [("reference", referenceTimeline), ("candidate", candidateTimeline)] {
             guard let timeline else { continue }
             lines.append(String(

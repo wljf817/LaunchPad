@@ -72,11 +72,15 @@ public struct CompareParameters: Codable, Equatable, Sendable {
     public var pixelThreshold: Int
     public var maxRatio: Double
     public var masks: [PointRect]
+    /// Masked, in addition to `masks`, only when finding each recording's anchor and last change:
+    /// for a region that keeps changing to the end (a blinking insertion point) but is compared.
+    public var timelineMasks: [PointRect]
 
-    public init(pixelThreshold: Int, maxRatio: Double, masks: [PointRect]) {
+    public init(pixelThreshold: Int, maxRatio: Double, masks: [PointRect], timelineMasks: [PointRect] = []) {
         self.pixelThreshold = pixelThreshold
         self.maxRatio = maxRatio
         self.masks = masks
+        self.timelineMasks = timelineMasks
     }
 }
 
@@ -115,9 +119,10 @@ public enum Comparison {
     public static func compare(_ reference: Recording, _ candidate: Recording, parameters: CompareParameters) throws(InvalidInput) -> Report {
         try validate(reference, candidate)
         let mask = makeMask(parameters, reference)
+        let timelineMask = makeMask(parameters.masks + parameters.timelineMasks, reference)
         let threshold = parameters.pixelThreshold
-        let referenceTimeline = try labelled("reference") { () throws(InvalidInput) in try reference.timeline(threshold: threshold, mask: mask) }
-        let candidateTimeline = try labelled("candidate") { () throws(InvalidInput) in try candidate.timeline(threshold: threshold, mask: mask) }
+        let referenceTimeline = try labelled("reference") { () throws(InvalidInput) in try reference.timeline(threshold: threshold, mask: timelineMask) }
+        let candidateTimeline = try labelled("candidate") { () throws(InvalidInput) in try candidate.timeline(threshold: threshold, mask: timelineMask) }
         let period = 1 / Double(reference.metadata.display.mode.refreshRate)
         let range = Timing.sampleRange(
             referenceSpan: referenceTimeline.lastChangeTime - referenceTimeline.anchorTime,
@@ -174,9 +179,13 @@ public enum Comparison {
     }
 
     static func makeMask(_ parameters: CompareParameters, _ recording: Recording) -> PixelMask? {
-        guard !parameters.masks.isEmpty else { return nil }
+        makeMask(parameters.masks, recording)
+    }
+
+    static func makeMask(_ rects: [PointRect], _ recording: Recording) -> PixelMask? {
+        guard !rects.isEmpty else { return nil }
         return PixelMask(
-            rects: parameters.masks, scale: recording.metadata.display.mode.scale,
+            rects: rects, scale: recording.metadata.display.mode.scale,
             width: recording.metadata.display.pixelWidth, height: recording.metadata.display.pixelHeight
         )
     }
