@@ -144,8 +144,10 @@ func treeDescription(_ item: LPItem, depth: Int = 0) -> [String] {
 
 /// A bundle with this project's `LaunchPadLayout.plist` and only the `zh_CN` strings, used by every
 /// test as the app bundle (`launchPadBundle`). With a single localization, lookups in it give the
-/// `zh_CN` titles whatever the test process's languages are (REF-LAYOUT-009).
+/// `zh_CN` titles whatever the test process's languages are (REF-LAYOUT-009). Making it also sets the
+/// reference VM's languages (`useReferenceLanguages`).
 let testResources: Bundle = {
+    useReferenceLanguages
     let resources = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         .appendingPathComponent("Sources/LaunchPad/Resources")
@@ -164,6 +166,14 @@ let testResources: Bundle = {
         writeTestPNG(width: width, to: directory.appendingPathComponent(file))
     }
     return Bundle(path: directory.path)!
+}()
+
+/// Makes the test process's preferred languages the reference VM's, `zh-Hans-US` then `en-US`
+/// (REF-LAYOUT-008), for the process only: localized comparisons, such as the layout's title order,
+/// follow the first preferred language (REF-LAYOUT-005), and the golden layouts were built with it.
+let useReferenceLanguages: Void = {
+    UserDefaults.standard.setVolatileDomain(["AppleLanguages": ["zh-Hans-US", "en-US"]], forName: UserDefaults.argumentDomain)
+    _CFLocaleResetCurrent()
 }()
 
 /// Small images in `testResources` for the image cache, told apart by their widths:
