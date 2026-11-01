@@ -136,6 +136,12 @@ protocol ECSBDelegate: NSObjectProtocol {
     @objc optional func didBeginEditing()
     @objc optional func didEndEditing()
 
+    /// Sent by the main grid's layer when the search text changed or was cleared (REF-SEARCH-008).
+    @objc(searchTextChanged:)
+    optional func searchTextChanged(_ term: String)
+
+    @objc optional func searchTextCleared()
+
     @objc(selectionWillChangeFromItem:toItem:inPager:)
     optional func selectionWillChange(fromItem oldItem: AnyObject?, toItem newItem: AnyObject?, inPager pager: AnyObject?)
 

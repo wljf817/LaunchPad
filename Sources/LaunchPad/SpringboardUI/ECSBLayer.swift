@@ -17,6 +17,10 @@ class ECSBLayer: ECPagerLayer, ECEventHandlingDelegate {
     var keyDownHandled = false
     var mouseDragged = false
     var _searchString: NSString?
+    /// Set only by the original's `-setSearchString:`, which nothing calls, so it stays NO
+    /// (REF-SEARCH-008).
+    var _searchStringBeingSet = false
+    var _searchStringTimer: DispatchSourceTimer?
     var _noResultsContainerLayer: CALayer?
     var _noResultsLayer: ECShadowTextLayer?
     var _searchTextInputLayer: ECTextInputLayer?
@@ -61,7 +65,7 @@ class ECSBLayer: ECPagerLayer, ECEventHandlingDelegate {
         field.placeholderString = launchPadBundle.localizedString(forKey: "Search", value: "", table: nil) as NSString
         field.foregroundColor = CGColor(gray: 1, alpha: 1)
         field.eventDelegate = self
-        // Here the grid layer observes the field's `stringValue` (sub-phase 3.2).
+        field.addObserver(self, forKeyPath: "stringValue", options: [], context: nil)
         addSublayer(field)
     }
 
@@ -77,6 +81,76 @@ class ECSBLayer: ECPagerLayer, ECEventHandlingDelegate {
 
     nonisolated required init?(coder: NSCoder) {
         super.init(coder: coder)
+    }
+
+    /// Stops observing the search field and cancels the timer (REF-SEARCH-008).
+    isolated deinit {
+        _searchTextInputLayer?.removeObserver(self, forKeyPath: "stringValue")
+        _searchStringTimer?.cancel()
+    }
+
+    // MARK: - Search text (REF-SEARCH-008)
+
+    /// A change of the search field's `stringValue`: handled at once when the text is empty, otherwise
+    /// once the text has not changed for the delay. Anything else goes to super.
+    nonisolated override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey: Any]?,
+                                           context: UnsafeMutableRawPointer?) {
+        let observed = UncheckedBox(object as AnyObject?)
+        let layer = UncheckedBox(self)
+        let handled = MainActor.assumeIsolated { () -> Bool in
+            let gridLayer = layer.value
+            guard let field = gridLayer._searchTextInputLayer, observed.value === field, keyPath == "stringValue" else {
+                return false
+            }
+            guard !gridLayer._searchStringBeingSet else { return true }
+            if (field.stringValue?.length ?? 0) == 0 {
+                gridLayer._searchTextChanged()
+            } else {
+                gridLayer._searchStringTimer?.cancel()
+                gridLayer._searchStringTimer = nil
+                // REF-SEARCH-008: a repeating timer, which the handling cancels when it first fires.
+                let timer = DispatchSource.makeTimerSource(queue: .main)
+                timer.setEventHandler {
+                    MainActor.assumeIsolated { layer.value._searchTextChanged() }
+                }
+                timer.schedule(deadline: .now() + .milliseconds(150), repeating: .milliseconds(150), leeway: .nanoseconds(0))
+                timer.resume()
+                gridLayer._searchStringTimer = timer
+            }
+            return true
+        }
+        if !handled {
+            super.observeValue(forKeyPath: keyPath, of: object, change: change, context: context)
+        }
+    }
+
+    /// The original's handler block: when the field's text differs from the one last handled, keeps it
+    /// and tells the pager's handler that the text was cleared or changed, when it responds; then
+    /// cancels the timer.
+    private func _searchTextChanged() {
+        let text = _searchTextInputLayer?.stringValue
+        // As `-isEqualToString:`: nil on either side is not equal.
+        let unchanged = text.map { _searchString?.isEqual(to: $0 as String) == true } ?? false
+        if !unchanged {
+            _searchString = text
+            let handler = (pager as? ECSBPager)?.handler as? ECSBDelegate
+            if (text?.length ?? 0) == 0 {
+                if let handler, handler.responds(to: #selector(ECSBDelegate.searchTextCleared)) {
+                    handler.searchTextCleared?()
+                }
+            } else if let handler, handler.responds(to: #selector(ECSBDelegate.searchTextChanged(_:))),
+                      let term = _searchString {
+                handler.searchTextChanged?(term as String)
+            }
+        }
+        _searchStringTimer?.cancel()
+        _searchStringTimer = nil
+    }
+
+    /// Cancels the search timer. The page change timer of a drag comes with phase 4.
+    @objc func cancelTimers() {
+        _searchStringTimer?.cancel()
+        _searchStringTimer = nil
     }
 
     /// Clamped to 0…1 (REF-GRID-005).

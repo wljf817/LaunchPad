@@ -264,14 +264,17 @@ final class ECSBSpringboard: NSObject, ECPagerSource, ECSBGridActionHandling, EC
     @objc var visible: Bool { _visible }
 
     /// The overlay was shown or hidden: passed on to the pager (REF-GRID-015), then the selection is
-    /// cleared (REF-KEYBOARD-003). Clearing the dragged-over item and the pager layer's timers come with
-    /// phase 4.
+    /// cleared (REF-KEYBOARD-003); once hidden, the pager layer's timers are cancelled (REF-SEARCH-008).
+    /// Clearing the dragged-over item comes with phase 4.
     @objc(setVisible:)
     func setVisible(_ visible: Bool) {
         guard _visible != visible else { return }
         _visible = visible
         pager.setVisible(visible)
         pager.selectedItem = nil
+        if !visible {
+            layer.cancelTimers()
+        }
     }
 
     /// The model object of the pager's selected item (REF-KEYBOARD-003).
