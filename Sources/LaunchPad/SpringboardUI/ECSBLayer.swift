@@ -347,19 +347,21 @@ class ECSBLayer: ECPagerLayer, ECEventHandlingDelegate {
 
     // MARK: - Keys (REF-KEYBOARD-001)
 
-    /// Decides which keys go to the search field. Tab, Command-Left and Command-Right, Left and Right,
-    /// Up, Down, Return, Enter and Escape set `keyDownHandled` and return NO, so that they reach the
-    /// navigation. Any other key, Home, End, Page Up and Page Down included, leaves it clear and goes
-    /// to the search field, which returns YES. The search field comes with phase 3: until then an input
-    /// method never composes in it, it never has focus or a search string, and the keys for it return
-    /// NO.
+    /// Decides which keys go to the search field. Tab toggles its focus; Command-Left and
+    /// Command-Right, Up, Down, Return, Enter and Escape do not go to it; Left goes to it while it has
+    /// focus, Right only while it has focus and the search string is not empty. These set
+    /// `keyDownHandled`, and return YES only when the field got the key. Any other key, Home, End,
+    /// Page Up and Page Down included, leaves `keyDownHandled` clear, makes the field active and goes
+    /// to it, which returns YES.
     @objc(keyDown:)
     func keyDown(_ event: ECEvent) -> Bool {
+        let searchString = _searchString ?? ""
         let key = event.keyData
         keyDownHandled = false
-        // While an input method composes in the search field, the field gets every key (phase 3).
+        // While an input method composes in the search field, the field gets every key (sub-phase 3.4).
+        let field = _searchTextInputLayer!
         if key == 0x09 {  // Tab (REF-KEYBOARD-001)
-            // Toggles the search field's focus (phase 3).
+            field.hasFocus = !field.hasFocus
             keyDownHandled = true
             return false
         }
@@ -372,27 +374,49 @@ class ECSBLayer: ECPagerLayer, ECEventHandlingDelegate {
         switch key {
         case 0xF703:  // Right (REF-KEYBOARD-001)
             keyDownHandled = true
-            // With a search string, as Left (phase 3).
-            return false
+            if searchString.length == 0 {
+                return false
+            }
         case 0xF702:  // Left (REF-KEYBOARD-001)
             keyDownHandled = true
-            // The search field gets the key when it has focus (phase 3).
-            return false
         case 0x03, 0x0D, 0x1B, 0xF700, 0xF701:  // Enter, Return, Escape, Up, Down (REF-KEYBOARD-001)
             keyDownHandled = true
             return false
         default:
-            // With a drag capture the search field is made inactive and loses focus; otherwise it is
-            // made active and gets the key (phase 3).
-            return false
+            // With a drag capture the field is made inactive and loses focus instead (phase 4).
+            if !field.textFieldActive {
+                field.textFieldActive = true
+            }
+            return field.handleKeyEvent(event)
         }
+        guard field.hasFocus else { return false }
+        _ = field.handleKeyEvent(event)
+        return true
     }
 
-    /// The search field gets the key ups of the keys it got (phase 3); with a drag capture it is made
-    /// inactive and loses focus instead (phase 3). So NO until then (REF-KEYBOARD-001).
+    /// The search field gets the key ups of the keys it got (REF-KEYBOARD-001), made active first when it
+    /// is not. With a drag capture it is made inactive and loses focus instead (phase 4).
     @objc(keyUp:)
     func keyUp(_ event: ECEvent) -> Bool {
-        false
+        guard !keyDownHandled else { return false }
+        let field = _searchTextInputLayer!
+        if !field.textFieldActive {
+            field.textFieldActive = true
+        }
+        return field.handleKeyEvent(event)
+    }
+
+    /// A press on the search field makes it active when it is not, then gives it focus; YES when it was
+    /// not active, so the press goes no further (research paper §8.2).
+    @objc(leftMouseDown:in:)
+    func leftMouseDown(_ event: ECEvent, in layer: CALayer?) -> Bool {
+        guard let field = _searchTextInputLayer, field === layer else { return false }
+        let wasActive = field.textFieldActive
+        if !wasActive {
+            field.textFieldActive = true
+        }
+        field.hasFocus = true
+        return !wasActive
     }
 
     // MARK: - Scroll wheel and gestures (REF-PAGING-006)

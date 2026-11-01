@@ -1046,19 +1046,102 @@ struct KeyRoutingTests {
 
     // MARK: - The grid layer (REF-KEYBOARD-001)
 
-    @Test("ECSBLayer：决定的键置位并返回 NO，其余的键（含 Home、End、翻页键、字母、空格）清掉那一位并返回 NO；抬起总是 NO")
-    func gridLayerKeys() {
+    /// The number of events the search field holds for the service; it is not connected in these tests,
+    /// so every event it gets is queued (REF-SEARCH-011).
+    func queued(_ field: ECTextInputLayer) -> Int {
+        field._queuedEvents?.count ?? 0
+    }
+
+    /// An inactive search field without focus that holds no event.
+    func resetField(_ field: ECTextInputLayer) {
+        field.hasFocus = false
+        field.textFieldActive = false
+        field._queuedEvents = nil
+    }
+
+    @Test("ECSBLayer：Tab 之外决定的键置位、返回 NO、不激活搜索框；其余的键（含 Home、End、翻页键、字母、空格）清掉那一位、激活搜索框、交给它并返回 YES；抬起只交出按下时交出的键")
+    func gridLayerKeys() throws {
         let keys = KeyGrid([35])
         let layer = keys.grid.layer
-        for (name, event, kept) in keptKeys {
+        let field = try #require(layer.searchTextInputLayer())
+        for (name, event, kept) in keptKeys where name != "Tab" {
+            resetField(field)
             layer.keyDownHandled = !kept
-            #expect(!layer.keyDown(event()), "\(name)")
+            #expect(layer.keyDown(event()) == !kept, "\(name)")
             #expect(layer.keyDownHandled == kept, "\(name)")
-            #expect(!layer.keyUp(key(Int64(event().keyData), down: false)), "\(name)")
-            #expect(layer.keyDownHandled == kept, "\(name)")
+            #expect(field.textFieldActive == !kept, "\(name)")
+            #expect(queued(field) == (kept ? 0 : 1), "\(name)")
+            #expect(layer.keyUp(key(Int64(event().keyData), down: false)) == !kept, "\(name)")
+            #expect(queued(field) == (kept ? 0 : 2), "\(name)")
         }
+        #expect(!field.hasFocus)
         #expect(keys.selection == nil)
         #expect(keys.source.actions.isEmpty)
+    }
+
+    @Test("ECSBLayer：Tab 切换搜索框的焦点并返回 NO，第一次时激活它；Tab 和它的抬起都不交给搜索框")
+    func gridLayerTab() throws {
+        let keys = KeyGrid([35])
+        let layer = keys.grid.layer
+        let field = try #require(layer.searchTextInputLayer())
+        #expect(!layer.keyDown(key(KeyCharacter.tab)))
+        #expect(layer.keyDownHandled)
+        #expect(field.hasFocus)
+        #expect(field.textFieldActive)
+        #expect(!layer.keyUp(key(KeyCharacter.tab, down: false)))
+        #expect(!layer.keyDown(key(KeyCharacter.tab)))
+        #expect(!field.hasFocus)
+        #expect(queued(field) == 0)
+    }
+
+    @Test("ECSBLayer：有焦点时左键交给搜索框并返回 YES；右键在 _searchString 为空时不交（搜索框里有字也不交），不空时交；上下键、Cmd 加左右键不交；这些键的抬起都不交")
+    func gridLayerKeysWithFocus() throws {
+        let keys = KeyGrid([35])
+        let layer = keys.grid.layer
+        let field = try #require(layer.searchTextInputLayer())
+        field.hasFocus = true
+        field.stringValue = "pro"
+        layer._searchString = ""
+        let routes: [(name: String, event: ECEvent, forwarded: Bool)] = [
+            ("Left", key(KeyCharacter.left), true),
+            ("Right", key(KeyCharacter.right), false),
+            ("Up", key(KeyCharacter.up), false),
+            ("Down", key(KeyCharacter.down), false),
+            ("Command-Left", key(KeyCharacter.left, command: true), false),
+            ("Command-Right", key(KeyCharacter.right, command: true), false),
+        ]
+        for (name, event, forwarded) in routes {
+            field._queuedEvents = nil
+            #expect(layer.keyDown(event) == forwarded, "\(name)")
+            #expect(layer.keyDownHandled, "\(name)")
+            #expect(!layer.keyUp(key(Int64(event.keyData), down: false)), "\(name)")
+            #expect(queued(field) == (forwarded ? 1 : 0), "\(name)")
+        }
+        layer._searchString = "pro"
+        field._queuedEvents = nil
+        #expect(layer.keyDown(key(KeyCharacter.right)))
+        #expect(queued(field) == 1)
+        field.hasFocus = false
+        field._queuedEvents = nil
+        #expect(!layer.keyDown(key(KeyCharacter.left)))
+        #expect(!layer.keyDown(key(KeyCharacter.right)))
+        #expect(queued(field) == 0)
+    }
+
+    @Test("ECSBLayer：在没激活的搜索框上按下时激活它、给它焦点并返回 YES；已激活时给焦点、返回 NO；按在别的 layer 上什么也不做、返回 NO")
+    func gridLayerMouseDown() throws {
+        let keys = KeyGrid([35])
+        let layer = keys.grid.layer
+        let field = try #require(layer.searchTextInputLayer())
+        let press = ECEvent(event: mouseEvent(.leftMouseDown, at: .zero), hitLayer: field._hostLayer, hitWindow: nil, session: nil)
+        #expect(!layer.leftMouseDown(press, in: keys.page(0).layer))
+        #expect(!field.textFieldActive && !field.hasFocus)
+        #expect(layer.leftMouseDown(press, in: field))
+        #expect(field.textFieldActive && field.hasFocus)
+        field.hasFocus = false
+        #expect(!layer.leftMouseDown(press, in: field))
+        #expect(field.textFieldActive && field.hasFocus)
+        #expect(queued(field) == 0)
     }
 
     // MARK: - The pager (REF-KEYBOARD-005)
@@ -1117,45 +1200,61 @@ struct KeyRoutingTests {
 
     // MARK: - ECSBSpringboard and Springboard (REF-KEYBOARD-001)
 
-    @Test("ECSBSpringboard：先给 ECSBLayer，它返回 NO 再给 ECSBPager；抬起相同")
-    func springboardKeys() {
+    @Test("ECSBSpringboard：先给 ECSBLayer，它返回 NO 再给 ECSBPager，返回 YES 时不再给；抬起相同")
+    func springboardKeys() throws {
         let keys = KeyGrid([35])
-        for (name, event, _) in keptKeys {
+        let field = try #require(keys.grid.layer.searchTextInputLayer())
+        for (name, event, kept) in keptKeys {
+            resetField(field)
             keys.reset()
             let character = Int64(event().keyData)
             let performs = character == 0x0D || character == 0x03
-            #expect(!keys.grid.keyDown(event()), "\(name)")
-            #expect(keys.pager.log == ["layer keyDown NO", "pager keyDown NO"] + (performs ? ["pager performAction NO"] : []),
-                    "\(name)")
+            #expect(keys.grid.keyDown(event()) == !kept, "\(name)")
+            #expect(keys.pager.log == (kept ? ["layer keyDown NO", "pager keyDown NO"] + (performs ? ["pager performAction NO"] : [])
+                                            : ["layer keyDown YES"]), "\(name)")
             keys.reset()
-            #expect(!keys.grid.keyUp(key(character, down: false)), "\(name)")
-            #expect(keys.pager.log == ["layer keyUp NO", "pager keyUp NO"], "\(name)")
+            #expect(keys.grid.keyUp(key(character, down: false)) == !kept, "\(name)")
+            #expect(keys.pager.log == (kept ? ["layer keyUp NO", "pager keyUp NO"] : ["layer keyUp YES"]), "\(name)")
         }
     }
 
-    @Test("Springboard：方向键、Home、End、翻页键换成导航类型交给 ECSBSpringboard；Tab、字母、空格不导航；总是返回 YES")
-    func controllerKeys() {
+    @Test("ECSBSpringboard：主网格的搜索框有焦点时 -navigate:withEvent: 返回 NO，不交给 pager")
+    func navigateWithFocus() throws {
+        let keys = KeyGrid([35])
+        let field = try #require(keys.grid.layer.searchTextInputLayer())
+        field.hasFocus = true
+        for type in [navigateUp, navigateDown, navigateLeft, navigateRight] {
+            #expect(!keys.grid.navigate(type, with: nil))
+        }
+        #expect(keys.pager.log.isEmpty)
+        #expect(keys.selection == nil)
+    }
+
+    @Test("Springboard：方向键换成导航类型交给 ECSBSpringboard；Home、End、翻页键、字母、空格进搜索框，不导航；Tab 不导航；总是返回 YES")
+    func controllerKeys() throws {
         let keys = KeyGrid([35, 35, 10])
         let controller = makeController(keys)
-        let routes: [(name: String, event: ECEvent, navigation: String?)] = [
-            ("Up", key(KeyCharacter.up), "pager navigate 0 YES"),
-            ("Down", key(KeyCharacter.down), "pager navigate 1 YES"),
-            ("Left", key(KeyCharacter.left), "pager navigate 2 YES"),
-            ("Right", key(KeyCharacter.right), "pager navigate 3 YES"),
-            ("Home", key(KeyCharacter.home), "pager navigate 6 NO"),
-            ("End", key(KeyCharacter.end), "pager navigate 7 NO"),
-            ("Page Up", key(KeyCharacter.pageUp), "pager navigate 8 NO"),
-            ("Page Down", key(KeyCharacter.pageDown), "pager navigate 9 NO"),
-            ("Tab", key(KeyCharacter.tab), nil),
-            ("a", key(KeyCharacter.a), nil),
-            ("Space", key(KeyCharacter.space), nil),
+        let field = try #require(keys.grid.layer.searchTextInputLayer())
+        let routes: [(name: String, event: ECEvent, log: [String])] = [
+            ("Up", key(KeyCharacter.up), ["layer keyDown NO", "pager keyDown NO", "pager navigate 0 YES"]),
+            ("Down", key(KeyCharacter.down), ["layer keyDown NO", "pager keyDown NO", "pager navigate 1 YES"]),
+            ("Left", key(KeyCharacter.left), ["layer keyDown NO", "pager keyDown NO", "pager navigate 2 YES"]),
+            ("Right", key(KeyCharacter.right), ["layer keyDown NO", "pager keyDown NO", "pager navigate 3 YES"]),
+            ("Home", key(KeyCharacter.home), ["layer keyDown YES"]),
+            ("End", key(KeyCharacter.end), ["layer keyDown YES"]),
+            ("Page Up", key(KeyCharacter.pageUp), ["layer keyDown YES"]),
+            ("Page Down", key(KeyCharacter.pageDown), ["layer keyDown YES"]),
+            ("Tab", key(KeyCharacter.tab), ["layer keyDown NO", "pager keyDown NO"]),
+            ("a", key(KeyCharacter.a), ["layer keyDown YES"]),
+            ("Space", key(KeyCharacter.space), ["layer keyDown YES"]),
         ]
-        for (name, event, navigation) in routes {
+        for (name, event, log) in routes {
+            resetField(field)
             keys.show(0)
             #expect(controller.keyDown(event), "\(name)")
-            #expect(keys.pager.log == ["layer keyDown NO", "pager keyDown NO"] + (navigation.map { [$0] } ?? []), "\(name)")
+            #expect(keys.pager.log == log, "\(name)")
             #expect(keys.pager.currentPageIndex == 0, "\(name)")
-            #expect((keys.selection != nil) == (navigation?.hasSuffix("YES") == true), "\(name)")
+            #expect((keys.selection != nil) == (log.count == 3), "\(name)")
         }
         // Home, End and the page keys leave a selection and the page as they are.
         keys.select(0, 28)
@@ -1185,11 +1284,15 @@ struct KeyRoutingTests {
         let keys = KeyGrid([35, 35, 10])
         let controller = makeController(keys)
         controller._visible = false
-        for character in [KeyCharacter.up, KeyCharacter.down, KeyCharacter.left, KeyCharacter.right, KeyCharacter.home,
-                          KeyCharacter.end, KeyCharacter.pageUp, KeyCharacter.pageDown] {
+        for character in [KeyCharacter.up, KeyCharacter.down, KeyCharacter.left, KeyCharacter.right] {
             keys.reset()
             #expect(controller.keyDown(key(character, command: true)))
             #expect(keys.pager.log == ["layer keyDown NO", "pager keyDown NO"])
+        }
+        for character in [KeyCharacter.home, KeyCharacter.end, KeyCharacter.pageUp, KeyCharacter.pageDown] {
+            keys.reset()
+            #expect(controller.keyDown(key(character, command: true)))
+            #expect(keys.pager.log == ["layer keyDown YES"])
         }
         #expect(keys.selection == nil)
         #expect(keys.pager.currentPageIndex == 0)
@@ -1243,10 +1346,13 @@ struct KeyRoutingTests {
     func controllerKeyUp() {
         let keys = KeyGrid([35])
         let controller = makeController(keys)
-        for character in [KeyCharacter.return, KeyCharacter.right, KeyCharacter.a] {
+        for (character, log) in [(KeyCharacter.return, ["layer keyUp NO", "pager keyUp NO"]),
+                                 (KeyCharacter.right, ["layer keyUp NO", "pager keyUp NO"]),
+                                 (KeyCharacter.a, ["layer keyUp YES"])] {
+            _ = controller.keyDown(key(character))
             keys.reset()
             #expect(!controller.keyUp(key(character, down: false)))
-            #expect(keys.pager.log == ["layer keyUp NO", "pager keyUp NO"])
+            #expect(keys.pager.log == log)
         }
     }
 }

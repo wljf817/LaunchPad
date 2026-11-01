@@ -307,11 +307,13 @@ final class ECSBSpringboard: NSObject, ECPagerSource, ECSBGridActionHandling, EC
 
     // MARK: - ECKeyboardNavigating (REF-KEYBOARD-002)
 
-    /// The pager navigates. NO while a folder title is edited (phase 5) or the search field has focus
-    /// (phase 3); with a folder shown its group pager navigates instead (phase 5).
+    /// The pager navigates. NO while the main grid's search field has focus (REF-KEYBOARD-001) or a
+    /// folder title is edited (phase 5); with a folder shown its group pager navigates instead
+    /// (phase 5).
     @objc(navigate:withEvent:)
     func navigate(_ type: Int64, with event: ECEvent?) -> Bool {
-        pager.navigate(type, with: event)
+        guard layer.searchTextInputLayer()?.hasFocus != true else { return false }
+        return pager.navigate(type, with: event)
     }
 
     @objc func layout() {
