@@ -3,14 +3,18 @@ import Foundation
 import LaunchPadPrivate
 import os
 import QuartzCore
+import XPC
 
 /// Every text input layer of the process, not retained; created by the first one (REF-SEARCH-001).
 @MainActor private var textInputLayers: NSHashTable<ECTextInputLayer>?
 
+/// The text input service the field connects to: the original's `com.apple.dock.ecti`, here the XPC
+/// service in the background process's bundle (REF-SEARCH-011).
+private let textInputServiceName = "io.github.wljf817.LaunchPad.ecti"
+
 /// Dock's text input layer (REF-SEARCH-001): a search field or a plain text field whose text field
-/// lives in the text input service and shows through `_hostLayer`. The search type also draws its
-/// background, magnifier, placeholder and cancel button. The service steps (connection, messages,
-/// window location) come with sub-phase 3.3.
+/// lives in the text input service and shows through `_hostLayer` (REF-SEARCH-011). The search type
+/// also draws its background, magnifier, placeholder and cancel button.
 @MainActor
 @objc(ECTextInputLayer)
 class ECTextInputLayer: CALayer, ECEventHandling, ECEventHandlingDelegate {
@@ -19,7 +23,8 @@ class ECTextInputLayer: CALayer, ECEventHandling, ECEventHandlingDelegate {
     var _cancelSearchLayer: CALayer?
     var _placeholderLayer: ECTextLayer?
     var _type = 0
-    /// The pid of the text input service; 0 until it is connected (sub-phase 3.3).
+    var _psn = CPSProcessSerNum(hi: 0, lo: 0)
+    /// The pid of the text input service; 0 until it is connected.
     var _pid: pid_t = 0
     var _stringValue: NSString?
     var _placeholderString: NSString?
@@ -32,12 +37,19 @@ class ECTextInputLayer: CALayer, ECEventHandling, ECEventHandlingDelegate {
     var _fontSize: CGFloat = 0
     var _foregroundColor: CGColor?
     var _scaleFactor: Float = 0
+    var _hasConnection = false
+    var _connectionInvalid = false
     var _textFieldActive = false
     var _queueEvents = false
     var _fadeWhenNotActive = false
     var _hasFocus = false
+    var _updatingValueFromServer = false
+    // _isMarked comes with sub-phase 3.4, _visibleBlock (the folder title) with phase 5.
     var _layoutRTL = false
+    var _connection: xpc_connection_t?
     var _containerWindow: WALayerKitWindow?
+    /// The service's text field width, from its replies and messages.
+    var _actualWidth: CGFloat = 0
 
     /// Registers the layer, makes `_hostLayer` and, for the search type (1), the search layers with a
     /// margin of the height; other types have a margin of 4. The scale factor is set last, so the
@@ -227,14 +239,18 @@ class ECTextInputLayer: CALayer, ECEventHandling, ECEventHandlingDelegate {
     }
 
     /// A new font (by identity) restyles the placeholder; the service gets it when connected
-    /// (sub-phase 3.3).
+    /// (REF-SEARCH-011).
     @objc var font: AnyObject? {
         get { _font }
         set {
             guard _font !== newValue else { return }
             _font = newValue
             _fontChanged()
-            // Sub-phase 3.3: sent to the service when connected.
+            guard _hasConnection, let font = _font, let data = fontData(font) else { return }
+            let message = xpc_dictionary_create(nil, nil, 0)
+            xpc_dictionary_set_string(message, "request", "font")
+            data.withUnsafeBytes { xpc_dictionary_set_data(message, "font", $0.baseAddress!, data.count) }
+            xpc_connection_send_message(_connection!, message)
         }
     }
 
@@ -257,20 +273,27 @@ class ECTextInputLayer: CALayer, ECEventHandling, ECEventHandlingDelegate {
         }
     }
 
-    /// Kept for the service, which gets a new one when connected (sub-phase 3.3). The placeholder's
+    /// Kept for the service, which gets a new one when connected (REF-SEARCH-011). The placeholder's
     /// color is its own (`-_fontChanged`).
     @objc var foregroundColor: CGColor? {
         get { _foregroundColor }
         set {
             guard _foregroundColor !== newValue else { return }
             _foregroundColor = newValue
-            // Sub-phase 3.3: sent to the service when connected.
+            guard _hasConnection else { return }
+            let message = xpc_dictionary_create(nil, nil, 0)
+            xpc_dictionary_set_string(message, "request", "foregroundColor")
+            if let color = _foregroundColor, let components = colorArray(color) {
+                xpc_dictionary_set_value(message, "foregroundColor", components)
+            }
+            xpc_connection_send_message(_connection!, message)
         }
     }
 
     /// A new string (by identity) shows the cancel button and hides the placeholder when it is not
-    /// empty, the other way round when it is, without implicit actions (REF-SEARCH-005). The grid layer
-    /// observes it (sub-phase 3.2).
+    /// empty, the other way round when it is, without implicit actions (REF-SEARCH-005); the service
+    /// gets it when connected, unless it came from the service. The grid layer observes it
+    /// (REF-SEARCH-008).
     @objc dynamic var stringValue: NSString? {
         get { _stringValue }
         set {
@@ -286,29 +309,36 @@ class ECTextInputLayer: CALayer, ECEventHandling, ECEventHandlingDelegate {
             if length != 0 || !_hasFocus {
                 opacity = 1
             }
-            // Sub-phase 3.3: sent to the service when connected and not from it.
+            if _hasConnection && !_updatingValueFromServer {
+                _sendStringValueMessage()
+            }
         }
     }
 
-    /// Lays the layers out for the new state (REF-SEARCH-002, REF-SEARCH-005).
+    /// Deactivating closes the connection; activating clears "connection invalid" and connects
+    /// asynchronously on the main queue. Then the layers are laid out for the new state
+    /// (REF-SEARCH-002, REF-SEARCH-005, REF-SEARCH-011).
     @objc var textFieldActive: Bool {
         get { _textFieldActive }
         set {
             guard _textFieldActive != newValue else { return }
             _textFieldActive = newValue
             if !newValue {
-                // Sub-phase 3.3: -_closeConnection.
+                _closeConnection()
                 if (_stringValue?.length ?? 0) != 0 || !_hasFocus {
                     opacity = 1
                 }
             } else {
-                // Sub-phase 3.3: clears the invalid connection and asks for one on the main queue.
+                _connectionInvalid = false
+                DispatchQueue.main.async { self._setupConnection() }
             }
             layout()
         }
     }
 
-    /// Taking focus makes the field active first (REF-SEARCH-005).
+    /// Taking focus makes the field active first (REF-SEARCH-005). Then, asynchronously on the main
+    /// queue, the service gets the focus when connected, and losing focus without text deactivates the
+    /// field (REF-SEARCH-011).
     @objc var hasFocus: Bool {
         get { _hasFocus }
         set {
@@ -320,7 +350,17 @@ class ECTextInputLayer: CALayer, ECEventHandling, ECEventHandlingDelegate {
             if _hasFocus {
                 opacity = 1
             }
-            // Sub-phase 3.3: the focus goes to the service on the main queue.
+            DispatchQueue.main.async {
+                if self._hasConnection {
+                    let message = xpc_dictionary_create(nil, nil, 0)
+                    xpc_dictionary_set_string(message, "request", "hasFocus")
+                    xpc_dictionary_set_bool(message, "hasFocus", self._hasFocus)
+                    xpc_connection_send_message(self._connection!, message)
+                }
+                if !self._hasFocus && (self._stringValue?.length ?? 0) == 0 {
+                    self.textFieldActive = false
+                }
+            }
         }
     }
 
@@ -334,9 +374,252 @@ class ECTextInputLayer: CALayer, ECEventHandling, ECEventHandlingDelegate {
         }
     }
 
+    @objc var psn: CPSProcessSerNum {
+        _psn
+    }
+
+    @objc var actualWidth: CGFloat {
+        get { _actualWidth }
+        set { _actualWidth = newValue }
+    }
+
     /// The cancel button opaque while pressed (REF-SEARCH-005).
     @objc(_darkenCancelLayer:)
     func _darkenCancelLayer(_ darken: Bool) {
         _cancelSearchLayer?.opacity = darken ? 1 : 0.3  // REF-SEARCH-005
     }
+
+    // MARK: - The text input service (REF-SEARCH-011)
+
+    /// The service's process serial number: the one it sent, else LaunchServices' for its pid.
+    @objc func _fetchPSN() -> CPSProcessSerNum {
+        if _psn.lo == 0, _pid != 0, let asn = _LSASNCreateWithPid(nil, _pid) {
+            if let item = _LSCopyApplicationInformationItem(-2, asn, _kLSASNKey) {
+                var psn = _psn
+                _LSASNExtractHighAndLowParts(item, &psn.hi, &psn.lo)
+                _psn = psn
+            } else {
+                Logger().error("ECTI: psn for pid \(self._pid) failed")
+            }
+        }
+        return _psn
+    }
+
+    /// Connects to the field's own instance of the service on the main queue, then sets it up. The
+    /// service's errors and messages: an interrupted connection is set up again, an invalid one is
+    /// marked so; `stringUpdate` sets the text; `setMiniView` is the hand-over the Dock gets in the
+    /// original (REF-DEV-034).
+    @objc func _setupConnection() {
+        let connection = xpc_connection_create(textInputServiceName, DispatchQueue.main)
+        _connection = connection
+        withUnsafeBytes(of: &_connection_uuid) { xpc_connection_set_instance(connection, $0.baseAddress!.assumingMemoryBound(to: UInt8.self)) }
+        let layer = UncheckedBox(self)
+        let peer = UncheckedBox(connection)
+        xpc_connection_set_event_handler(connection) { event in
+            let event = UncheckedBox(event)
+            MainActor.assumeIsolated {
+                let layer = layer.value
+                let event = event.value
+                let type = xpc_get_type(event)
+                if type == XPC_TYPE_ERROR {
+                    if event === XPC_ERROR_CONNECTION_INVALID {
+                        layer._connectionInvalid = true
+                    } else if event === XPC_ERROR_CONNECTION_INTERRUPTED {
+                        layer._hasConnection = false
+                        layer._pid = 0
+                        layer._psn = CPSProcessSerNum(hi: 0, lo: 0)
+                        layer._ensureConnection()
+                    }
+                } else if type == XPC_TYPE_DICTIONARY, let message = xpc_dictionary_get_string(event, "message") {
+                    switch String(cString: message) {
+                    case "stringUpdate":
+                        let string = xpc_dictionary_get_string(event, "stringValue").map { NSString(utf8String: $0)! } ?? ""
+                        layer._updateStringValue(string, width: xpc_dictionary_get_double(event, "fieldWidth"),
+                                                 complete: xpc_dictionary_get_bool(event, "editingComplete"))
+                    case "hasMarked":
+                        // Kept in _isMarked (sub-phase 3.4).
+                        break
+                    case "setMiniView":
+                        // REF-DEV-034: the values AppKit sends the Dock, from the service's process.
+                        DSXSetMiniView(window: UInt32(truncatingIfNeeded: xpc_dictionary_get_uint64(event, "window")),
+                                       contextID: UInt32(truncatingIfNeeded: xpc_dictionary_get_uint64(event, "contextid")),
+                                       minimizedWindow: UInt32(truncatingIfNeeded: xpc_dictionary_get_uint64(event, "minimizedWindow")),
+                                       pid: xpc_connection_get_pid(peer.value))
+                    default:
+                        break
+                    }
+                }
+            }
+        }
+        xpc_connection_resume(connection)
+        _ensureConnection()
+    }
+
+    /// Sets the service up unless it is connected or the connection is invalid.
+    @objc func _ensureConnection() {
+        if !_hasConnection && !_connectionInvalid {
+            _doCommunicationSetup()
+        }
+    }
+
+    /// `setup`: the size between the margins, the focus, the font, whether it is a search field, the
+    /// text when there is one and the color. The reply's pid and process serial number mark the field
+    /// connected, then the mini view is set up.
+    @objc func _doCommunicationSetup() {
+        let message = xpc_dictionary_create(nil, nil, 0)
+        xpc_dictionary_set_string(message, "request", "setup")
+        xpc_dictionary_set_uint64(message, "height", UInt64(_size.height))
+        xpc_dictionary_set_uint64(message, "width", UInt64(_size.width + _margin * -2))
+        xpc_dictionary_set_bool(message, "hasFocus", _hasFocus)
+        if let font = _font, let data = fontData(font) {
+            data.withUnsafeBytes { xpc_dictionary_set_data(message, "font", $0.baseAddress!, data.count) }
+        }
+        if _type == 1 {
+            xpc_dictionary_set_uint64(message, "search_field", 1)
+        }
+        if let string = _stringValue, string.length != 0 {
+            xpc_dictionary_set_string(message, "stringValue", string.utf8String!)
+        }
+        if let color = _foregroundColor, let components = colorArray(color) {
+            xpc_dictionary_set_value(message, "foregroundColor", components)
+        }
+        let layer = UncheckedBox(self)
+        xpc_connection_send_message_with_reply(_connection!, message, DispatchQueue.main) { reply in
+            let reply = UncheckedBox(reply)
+            MainActor.assumeIsolated {
+                let layer = layer.value
+                let reply = reply.value
+                guard layer._connection != nil else { return }
+                guard !layer._hasConnection else {
+                    NSLog("could not communicate properly")
+                    return
+                }
+                let type = xpc_get_type(reply)
+                if type == XPC_TYPE_DICTIONARY {
+                    layer._pid = pid_t(truncatingIfNeeded: xpc_dictionary_get_uint64(reply, "pid"))
+                    let psn = UInt32(truncatingIfNeeded: xpc_dictionary_get_uint64(reply, "psn"))
+                    if psn == 0 {
+                        layer._psn = CPSProcessSerNum(hi: 0, lo: 0)
+                        layer._psn = layer._fetchPSN()
+                    } else {
+                        layer._psn = CPSProcessSerNum(hi: 0, lo: psn)
+                    }
+                } else if type == XPC_TYPE_ERROR {
+                    if reply === XPC_ERROR_CONNECTION_INVALID {
+                        Logger().error("ECTI: connection invalid")
+                    } else if reply === XPC_ERROR_CONNECTION_INTERRUPTED {
+                        Logger().error("ECTI: connection interrupted")
+                    }
+                    return
+                }
+                layer._hasConnection = true
+                layer._sendSetMiniViewMessage()
+            }
+        }
+    }
+
+    /// `setupMiniView`: the text and `_hostLayer`'s origin on screen, which is kept. The reply's width is
+    /// kept; then the text is fetched, and once it is here the queued events go out.
+    @objc func _sendSetMiniViewMessage() {
+        let message = xpc_dictionary_create(nil, nil, 0)
+        xpc_dictionary_set_string(message, "request", "setupMiniView")
+        xpc_dictionary_set_string(message, "stringValue", (_stringValue as String?) ?? "")
+        _globalHostFrame = _getHostFrame()
+        xpc_dictionary_set_double(message, "locx", _globalHostFrame.origin.x)
+        xpc_dictionary_set_double(message, "locy", _globalHostFrame.origin.y)
+        let layer = UncheckedBox(self)
+        xpc_connection_send_message_with_reply(_connection!, message, DispatchQueue.main) { reply in
+            let reply = UncheckedBox(reply)
+            MainActor.assumeIsolated {
+                let layer = layer.value
+                guard layer._connection != nil, xpc_get_type(reply.value) == XPC_TYPE_DICTIONARY else { return }
+                layer.actualWidth = xpc_dictionary_get_double(reply.value, "fieldWidth")
+                layer._getStringValue { _, _, _ in
+                    layer._queueEvents = false
+                    layer._processPendingEvents()
+                }
+            }
+        }
+    }
+
+    /// Asks the service for its text; `block` gets the text, the text field's width and whether editing
+    /// completed, or nil, 0 and NO when the reply is not one. Nothing comes once the connection is
+    /// closed.
+    @objc(_getStringValueWithBlock:)
+    func _getStringValue(withBlock block: @escaping (NSString?, CGFloat, Bool) -> Void) {
+        let message = xpc_dictionary_create(nil, nil, 0)
+        xpc_dictionary_set_string(message, "request", "stringValue")
+        let layer = UncheckedBox(self)
+        let block = UncheckedBox(block)
+        xpc_connection_send_message_with_reply(_connection!, message, DispatchQueue.main) { reply in
+            let reply = UncheckedBox(reply)
+            MainActor.assumeIsolated {
+                guard layer.value._connection != nil else { return }
+                let reply = reply.value
+                if xpc_get_type(reply) == XPC_TYPE_DICTIONARY {
+                    let string = xpc_dictionary_get_string(reply, "stringValue").map { NSString(utf8String: $0)! }
+                    block.value(string, xpc_dictionary_get_double(reply, "fieldWidth"), xpc_dictionary_get_bool(reply, "editingComplete"))
+                } else {
+                    NSLog("Couldn't get the string value")
+                    block.value(nil, 0, false)
+                }
+            }
+        }
+    }
+
+    /// The service's text as the field's, not sent back, and its width.
+    @objc(_updateStringValue:width:complete:)
+    func _updateStringValue(_ string: NSString?, width: CGFloat, complete: Bool) {
+        _updatingValueFromServer = true
+        stringValue = string
+        _updatingValueFromServer = false
+        actualWidth = width
+        // With `complete`, ECTextInputLayerEditingCompleteNotification (sub-phase 3.4).
+    }
+
+    /// `setStringValue` with the text ("" for none).
+    @objc func _sendStringValueMessage() {
+        let message = xpc_dictionary_create(nil, nil, 0)
+        xpc_dictionary_set_string(message, "request", "setStringValue")
+        xpc_dictionary_set_string(message, "stringValue", (_stringValue as String?) ?? "")
+        guard let connection = _connection else { return }
+        xpc_connection_send_message(connection, message)
+    }
+
+    /// Cancels the connection: a new UUID for the next one, which is a new service process; not
+    /// connected, no focus, not active, events queued again. The pid, the window and the context stay.
+    @objc func _closeConnection() {
+        guard let connection = _connection else { return }
+        xpc_connection_cancel(connection)
+        withUnsafeMutableBytes(of: &_connection_uuid) { uuid_generate($0.baseAddress!.assumingMemoryBound(to: UInt8.self)) }
+        _connection = nil
+        _hasConnection = false
+        _connectionInvalid = false
+        _hasFocus = false
+        _textFieldActive = false
+        _queueEvents = true
+    }
+
+    @objc func invalidate() {
+        _closeConnection()
+    }
+}
+
+/// The font's descriptor attributes as a binary property list, when they are a valid XML property
+/// list (REF-SEARCH-011).
+@MainActor
+private func fontData(_ font: AnyObject) -> Data? {
+    let attributes = CTFontDescriptorCopyAttributes(CTFontCopyFontDescriptor(font as! CTFont))
+    guard CFPropertyListIsValid(attributes, .xmlFormat_v1_0) else { return nil }
+    return CFPropertyListCreateData(nil, attributes, .binaryFormat_v1_0, 0, nil)?.takeRetainedValue() as Data?
+}
+
+/// The color's components as an XPC array of doubles (REF-SEARCH-011).
+@MainActor
+private func colorArray(_ color: CGColor) -> xpc_object_t? {
+    let array = xpc_array_create(nil, 0)
+    for component in color.components ?? [] {
+        xpc_array_append_value(array, xpc_double_create(Double(component)))
+    }
+    return array
 }

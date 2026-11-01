@@ -9,6 +9,8 @@
 #include <CoreText/CoreText.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <unistd.h>
+#include <xpc/xpc.h>
 #ifdef __OBJC__
 #import <Foundation/Foundation.h>
 #import <QuartzCore/QuartzCore.h>
@@ -193,6 +195,27 @@ extern NSString * const kCAFilterMultiplyColor;
 // created with this class name on macOS 27.2 (26B123) and macOS 26.6.2 (25G83).
 @interface CALayerHost : CALayer
 @end
+
+// The text input service (text-input, REF-SEARCH-011).
+
+// The service instance a connection is made to, chosen by the search field's UUID before the
+// connection is resumed. Exported by libxpc; on macOS 26.6.2 (25G83) two UUIDs gave two processes of
+// this project's service (REF-DEV-034).
+extern void xpc_connection_set_instance(xpc_connection_t connection, const unsigned char *instance);
+
+// The process serial number of a process, as the process manager keeps it (the search field's
+// _psn).
+typedef struct CPSProcessSerNum {
+    uint32_t hi;
+    uint32_t lo;
+} CPSProcessSerNum;
+
+// The search field asks LaunchServices for the service's process serial number by pid when the
+// setup reply has none: the application's ASN, its ASN item, and the two halves of it. Exported by
+// LaunchServices in the macOS 27.2 SDK; the service always sends its own, so they are not called.
+extern CFTypeRef _Nullable _LSASNCreateWithPid(CFAllocatorRef _Nullable allocator, pid_t pid) CF_RETURNS_RETAINED;
+extern void _LSASNExtractHighAndLowParts(CFTypeRef asn, uint32_t *high, uint32_t *low);
+extern const CFStringRef _kLSASNKey;
 
 // The ascent, descent and leading of a line, with its width as the result; the search field sums the
 // three for its placeholder's height (REF-SEARCH-002). Exported by CoreText; on macOS 27.2 (26B123)
