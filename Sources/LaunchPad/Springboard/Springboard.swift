@@ -41,6 +41,10 @@ class Springboard: NSObject, ECModalEventHandler, ECEventHandlingDelegate, ECSBD
     var _purgeItemsTimer: DispatchSourceTimer?
     var scanningComplete = false
     var ensuringSize = false
+    /// Set by a search and cleared by `-searchTextCleared`; while set, the grid shows `_searchPages`
+    /// (REF-SEARCH-009).
+    var _searching = false
+    var _searchPages: NSMutableArray?
     /// Set during an event's dispatch when the event should still go to the Dock; nothing sets it
     /// (REF-OVERLAY-009).
     var lastEventShouldBeHandledByDock = false
@@ -491,14 +495,19 @@ class Springboard: NSObject, ECModalEventHandler, ECEventHandlingDelegate, ECSBD
     // MARK: - ECSBDataSource
 
     /// `items` and `kind` build the item tree (research paper §6.1); `icon`, `miniIcon` and `title`
-    /// fill the item layers, the icons only while the overlay is open (REF-GRID-014). The other keys
-    /// (progress, status and the flags) and the search pages come with later phases.
+    /// fill the item layers, the icons only while the overlay is open (REF-GRID-014). While searching,
+    /// the root's items are the search pages and no other container has items (REF-SEARCH-009). The
+    /// other keys (progress, status and the flags) come with later phases.
     func value(forKey key: String, ofItem item: AnyObject?, withInfo info: AnyObject?) -> AnyObject? {
         guard let item else {
-            return key == "items" ? rootPage?.children : nil
+            guard key == "items" else { return nil }
+            return _searching ? _searchPages : rootPage?.children
         }
         switch key {
         case "items":
+            if _searching {
+                return (item as? SBSearchPage)?.items
+            }
             return (item as? LPItemContainer)?.children
         case "kind":
             if item is LPPage {
@@ -521,6 +530,54 @@ class Springboard: NSObject, ECModalEventHandler, ECEventHandlingDelegate, ECSBD
     }
 
     // MARK: - Search (REF-SEARCH-009)
+
+    /// Whether the grid shows search pages.
+    @objc var searching: Bool { _searching }
+
+    /// From the main grid when the search text changed to a non-empty term: searches the whole model
+    /// again and puts the results, in order, into search pages of at most a page's rows × columns.
+    @objc(searchTextChanged:)
+    func searchTextChanged(_ term: String) {
+        _searching = true
+        _searchPages = nil
+        let results = searchResults(forTerm: term)
+        let searchPages = NSMutableArray()
+        _searchPages = searchPages
+        var pageItems: NSMutableArray?
+        var count: UInt = 0
+        for result in results {
+            if searchPages.count == 0 || count >= springboardRows * springboardColumns {
+                let items = NSMutableArray()
+                searchPages.add(SBSearchPage(items: items))
+                pageItems = items
+                count = 0
+            }
+            pageItems?.add(result)
+            count += 1
+        }
+        springboard.filterUsingItems(results)
+    }
+
+    /// The model's apps, folders' apps included, that match the term by title or, failing that, by
+    /// file name when it differs from the title; apps whose file is not found are left out. In the
+    /// model's depth-first order.
+    @objc(searchResultsForTerm:)
+    func searchResults(forTerm term: String) -> NSMutableArray {
+        let results = NSMutableArray()
+        rootPage?.iterateChildren { item, _ in
+            guard let runnable = item as? LPRunnable, !runnable.notFound else { return }
+            let title = runnable.title ?? ""
+            if _wordFromTitle(title, matchesTerm: term) != UInt(NSNotFound) {
+                results.add(runnable)
+                return
+            }
+            let fileName = (((runnable.lastURL?.path ?? "") as NSString).lastPathComponent as NSString).deletingPathExtension
+            if !(fileName as NSString).isEqual(to: title), _wordFromTitle(fileName, matchesTerm: term) != UInt(NSNotFound) {
+                results.add(runnable)
+            }
+        }
+        return results
+    }
 
     /// `NSNotFound` when the title does not match the term, as it is or in lowercase; 0 when it does
     /// (the original's value for a match is not used).
@@ -588,6 +645,15 @@ class Springboard: NSObject, ECModalEventHandler, ECEventHandlingDelegate, ECSBD
             return 0
         }
         return startsWith(string.replacingOccurrences(of: " ", with: "") as NSString, compact as String) ? 0 : UInt(NSNotFound)
+    }
+
+    /// From the main grid when the search text became empty, from `-performCancel`, and from a drag
+    /// that leaves the filtering (phase 4): only while searching, stops searching.
+    @objc func searchTextCleared() {
+        guard _searching else { return }
+        _searching = false
+        _searchPages = nil
+        springboard.clearFilteredItems()
     }
 
     // MARK: - Events (REF-OVERLAY-009, REF-OVERLAY-010)
