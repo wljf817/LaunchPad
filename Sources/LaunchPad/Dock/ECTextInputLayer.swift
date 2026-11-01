@@ -41,6 +41,8 @@ class ECTextInputLayer: CALayer, ECEventHandling, ECEventHandlingDelegate {
     var _fontSize: CGFloat = 0
     var _foregroundColor: CGColor?
     var _scaleFactor: Float = 0
+    var _mouseDownInHost = false
+    var _mouseDownInClear = false
     var _hasConnection = false
     var _connectionInvalid = false
     var _textFieldActive = false
@@ -50,6 +52,8 @@ class ECTextInputLayer: CALayer, ECEventHandling, ECEventHandlingDelegate {
     var _updatingValueFromServer = false
     // _isMarked comes with sub-phase 3.4, _visibleBlock (the folder title) with phase 5.
     var _layoutRTL = false
+    /// Copies of the events forwarded while `_queueEvents` is set.
+    var _queuedEvents: NSMutableArray?
     var _connection: xpc_connection_t?
     var _containerWindow: WALayerKitWindow?
     /// The service's text field width, from its replies and messages.
@@ -652,6 +656,98 @@ class ECTextInputLayer: CALayer, ECEventHandling, ECEventHandlingDelegate {
         xpc_dictionary_set_double(message, "locx", _globalHostFrame.origin.x)
         xpc_dictionary_set_double(message, "locy", _globalHostFrame.origin.y)
         xpc_connection_send_message(_connection!, message)
+    }
+
+    /// Posts a copy of `event` (a `CGEvent`) to the service, in its window at the location less
+    /// `_hostLayer`'s origin on screen; while events are queued, keeps a copy instead.
+    @objc(_forwardEvent:)
+    func _forwardEvent(_ event: AnyObject?) {
+        let event = event as! CGEvent
+        if !_queueEvents {
+            let copy = event.copy()!
+            let location = event.location
+            copy.setIntegerValueField(CGEventField(rawValue: 51)!, value: Int64(_windowID))  // REF-SEARCH-011
+            CGEventSetWindowLocation(copy, CGPoint(x: location.x - _globalHostFrame.origin.x, y: location.y - _globalHostFrame.origin.y))
+            copy.postToPid(_pid)
+        } else {
+            if _queuedEvents == nil {
+                _queuedEvents = NSMutableArray(capacity: 0)
+            }
+            _queuedEvents!.add(event.copy()!)
+        }
+    }
+
+    /// Posts the queued events in order, each with the current event time.
+    @objc func _processPendingEvents() {
+        guard let events = _queuedEvents else { return }
+        _queuedEvents = nil
+        for case let event as CGEvent in events {
+            event.timestamp = CGSCurrentEventTimestamp()
+            _forwardEvent(event)
+        }
+    }
+
+    /// A key for the service (REF-KEYBOARD-001).
+    @objc(handleKeyEvent:)
+    func handleKeyEvent(_ event: ECEvent) -> Bool {
+        _forwardEvent(event.event)
+        return true
+    }
+
+    // MARK: - Events (REF-SEARCH-005)
+
+    /// A press on `_hostLayer` goes to the service, and so do the drags, moves and the release after
+    /// it. A press on the cancel button darkens it until the release, which clears the text.
+    @objc(leftMouseDown:)
+    func leftMouseDown(_ event: ECEvent) -> Bool {
+        if event.hitLayer === _hostLayer {
+            _mouseDownInHost = true
+            _forwardEvent(event.event)
+        } else if event.hitLayer === _cancelSearchLayer {
+            let disabled = disableActions()
+            _darkenCancelLayer(true)
+            if disabled {
+                CATransaction.setDisableActions(false)
+            }
+            _mouseDownInClear = true
+            ECModalEventController.sharedController().addCompletionBlock { _ in
+                guard self._mouseDownInClear else { return }
+                let disabled = disableActions()
+                self._darkenCancelLayer(false)
+                if disabled {
+                    CATransaction.setDisableActions(false)
+                }
+                self.stringValue = ""
+                self._sendStringValueMessage()
+                self._mouseDownInClear = false
+            }
+        }
+        return true
+    }
+
+    @objc(leftMouseDragged:)
+    func leftMouseDragged(_ event: ECEvent) -> Bool {
+        if _mouseDownInHost {
+            _forwardEvent(event.event)
+        }
+        return _mouseDownInHost
+    }
+
+    @objc(leftMouseUp:)
+    func leftMouseUp(_ event: ECEvent) -> Bool {
+        if _mouseDownInHost {
+            _mouseDownInHost = false
+            _forwardEvent(event.event)
+        }
+        return true
+    }
+
+    @objc(mouseMoved:)
+    func mouseMoved(_ event: ECEvent) -> Bool {
+        if _mouseDownInHost {
+            _forwardEvent(event.event)
+        }
+        return _mouseDownInHost
     }
 }
 

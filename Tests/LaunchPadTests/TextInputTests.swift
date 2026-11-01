@@ -10,6 +10,21 @@ import Testing
 // state, the hand-over of the mini view, the field's rectangle on screen and the events it forwards.
 // No service runs: the connection is made to a service the test process does not have.
 
+/// The events the field posted, with the pid they went to. LaunchPad's call of `CGEventPostToPid`
+/// binds to this definition in the test bundle, so nothing reaches the window server.
+nonisolated(unsafe) var postedEvents: [(pid: pid_t, event: CGEvent)] = []
+
+@_cdecl("CGEventPostToPid")
+func recordEventPostToPid(_ pid: pid_t, _ event: CGEvent?) {
+    if let event {
+        postedEvents.append((pid, event))
+    }
+}
+
+/// The location an event has in its window.
+@_silgen_name("CGEventGetWindowLocation")
+func CGEventGetWindowLocation(_ event: CGEvent) -> CGPoint
+
 /// A search field set up as the grid layer sets it up (REF-SEARCH-001), laid out at 250 × 25.
 @MainActor
 func makeTextInputField() -> ECTextInputLayer {
@@ -152,5 +167,120 @@ struct TextInputMiniViewTests {
     func gridFieldWindow() {
         let controller = Springboard()
         #expect(controller.springboard.layer.searchTextInputLayer()?.containerWindow === controller.containerWindow())
+    }
+}
+
+@MainActor
+@Suite(.serialized)
+struct TextInputEventTests {
+    func keyEvent(_ keyCode: CGKeyCode, at location: CGPoint = .zero, timestamp: UInt64 = 0) -> CGEvent {
+        let event = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: true)!
+        event.location = location
+        event.timestamp = timestamp
+        return event
+    }
+
+    func keyCodes(_ events: [CGEvent]) -> [Int64] {
+        events.map { $0.getIntegerValueField(.keyboardEventKeycode) }
+    }
+
+    @Test("没连上时转发的 p、r、o 按顺序进队列，不投出去")
+    func queuesUntilConnected() {
+        postedEvents.removeAll()
+        let field = makeTextInputField()
+        for keyCode: CGKeyCode in [35, 15, 31] {
+            #expect(field.handleKeyEvent(ECEvent(event: keyEvent(keyCode), hitLayer: nil, hitWindow: nil, session: nil)))
+        }
+        #expect(keyCodes(field._queuedEvents as! [CGEvent]) == [35, 15, 31])
+        #expect(postedEvents.isEmpty)
+    }
+
+    @Test("投给服务的 pid；字段 51 是服务的窗口号，窗口内位置是事件位置减托管 layer 在屏幕上的原点；投的是副本")
+    func forwardedEvent() throws {
+        postedEvents.removeAll()
+        let field = makeTextInputField()
+        field._queueEvents = false
+        field._pid = 7301
+        field.registerContext(0x5678, window: 0x1234)
+        field._globalHostFrame = CGRect(x: 668, y: 25, width: 200, height: 25)
+        let event = keyEvent(35, at: CGPoint(x: 700, y: 40))
+        field._forwardEvent(event)
+        let posted = try #require(postedEvents.first)
+        #expect(postedEvents.count == 1)
+        #expect(posted.pid == 7301)
+        #expect(posted.event !== event)
+        #expect(posted.event.getIntegerValueField(CGEventField(rawValue: 51)!) == 0x1234)
+        #expect(CGEventGetWindowLocation(posted.event) == CGPoint(x: 32, y: 15))
+        #expect(event.getIntegerValueField(CGEventField(rawValue: 51)!) == 0)
+        field._pid = 0
+    }
+
+    @Test("排着的事件按顺序投出，时间戳换成当前事件时间，队列清空")
+    func pendingEvents() {
+        postedEvents.removeAll()
+        let field = makeTextInputField()
+        for (keyCode, timestamp): (CGKeyCode, UInt64) in [(35, 1), (15, 2), (31, 3)] {
+            field._forwardEvent(keyEvent(keyCode, timestamp: timestamp))
+        }
+        field._queueEvents = false
+        let before = CGSCurrentEventTimestamp()
+        field._processPendingEvents()
+        let after = CGSCurrentEventTimestamp()
+        #expect(keyCodes(postedEvents.map(\.event)) == [35, 15, 31])
+        #expect(postedEvents.allSatisfy { $0.event.timestamp >= before && $0.event.timestamp <= after })
+        #expect(field._queuedEvents == nil)
+    }
+
+    @Test("在托管 layer 上按下后，拖动、移动和抬起才转发；按在别处时不转发")
+    func mouseOnTheHostLayer() {
+        let field = makeTextInputField()
+        func event(_ type: CGEventType, _ hitLayer: CALayer?) -> ECEvent {
+            ECEvent(event: mouseEvent(type, at: .zero), hitLayer: hitLayer, hitWindow: nil, session: nil)
+        }
+        func count() -> Int { field._queuedEvents?.count ?? 0 }
+        #expect(field.leftMouseDown(event(.leftMouseDown, field)))
+        #expect(!field.leftMouseDragged(event(.leftMouseDragged, field)))
+        #expect(!field.mouseMoved(event(.mouseMoved, field)))
+        #expect(field.leftMouseUp(event(.leftMouseUp, field)))
+        #expect(count() == 0)
+        #expect(field.leftMouseDown(event(.leftMouseDown, field._hostLayer)))
+        #expect(field.leftMouseDragged(event(.leftMouseDragged, field)))
+        #expect(field.mouseMoved(event(.mouseMoved, field)))
+        #expect(field.leftMouseUp(event(.leftMouseUp, field)))
+        #expect(count() == 4)
+        #expect(!field.leftMouseDragged(event(.leftMouseDragged, field._hostLayer)))
+        #expect(count() == 4)
+    }
+
+    @Test("清除按钮：按下时不透明，松开后回到 0.3，文字清空")
+    func cancelButton() throws {
+        let display = CGMainDisplayID()
+        let window = WALayerKitWindow(frame: CGRect(x: 0, y: 0, width: 1536, height: 960),
+                                      connection: UInt32(bitPattern: CGSMainConnectionID()), display: display, tags: 0x400, level: 20)
+        let field = makeTextInputField()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        field.frame = CGRect(x: 643, y: 910, width: 250, height: 25)
+        window.layer.addSublayer(field)
+        field.stringValue = "pro"
+        CATransaction.commit()
+        let cancel = try #require(field._cancelSearchLayer)
+        let center = field.convert(CGPoint(x: cancel.frame.midX, y: cancel.frame.midY), to: window.layer)
+        let location = CGPoint(x: center.x, y: 960 - 1 - center.y)
+        let controller = ECModalEventController.sharedController()
+        let handler = RecordingHandler(layer: field)
+        controller.addHandler(handler, externalEventSource: true, usingMouseHysteresis: true)
+        defer { controller.removeHandler(handler) }
+        var windows = [window]
+        var layers: [CALayer] = [field]
+        controller.handleEvent(mouseEvent(.leftMouseDown, at: location), windows: &windows, topLayers: &layers, windowCount: 1)
+        #expect(cancel.opacity == 1)
+        #expect(field.stringValue == "pro")
+        controller.handleEvent(mouseEvent(.leftMouseUp, at: location), windows: &windows, topLayers: &layers, windowCount: 1)
+        #expect(cancel.opacity == 0.3)
+        #expect(field.stringValue == "")
+        #expect(cancel.isHidden)
+        #expect(handler.calls.isEmpty)
+        field.removeFromSuperlayer()
     }
 }

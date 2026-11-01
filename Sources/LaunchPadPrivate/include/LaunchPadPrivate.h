@@ -211,6 +211,15 @@ extern void xpc_connection_set_instance(xpc_connection_t connection, const unsig
 // (REF-DEV-034).
 extern CGError CGSMoveWindow(CGSConnectionID cid, CGSWindowID wid, const CGPoint *point);
 
+// The location of an event in the window it goes to; forwarded events get the location in the
+// service's window (REF-SEARCH-011). Exported by CoreGraphics; on macOS 26.6.2 (25G83) the text field
+// of this project's service took keys posted with it set.
+extern void CGEventSetWindowLocation(CGEventRef event, CGPoint location);
+
+// The window server's current event time; queued events get it when they are posted
+// (REF-SEARCH-011). Exported by CoreGraphics in the macOS 27.2 SDK.
+extern uint64_t CGSCurrentEventTimestamp(void);
+
 // The process serial number of a process, as the process manager keeps it (the search field's
 // _psn).
 typedef struct CPSProcessSerNum {
