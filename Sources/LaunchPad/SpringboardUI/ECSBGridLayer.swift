@@ -4,6 +4,9 @@ import QuartzCore
 @MainActor
 @objc(ECSBGridLayer)
 final class ECSBGridLayer: ECGridLayer {
+    /// Set when the page is made while the pager is filtering (REF-SEARCH-010).
+    @objc var centerSingleRow = false
+
     @objc(initWithLayerSource:scaleFactor:layoutRTL:)
     override init(layerSource: ECLayerSource?, scaleFactor: Float, layoutRTL: Bool) {
         super.init(layerSource: layerSource, scaleFactor: scaleFactor, layoutRTL: layoutRTL)
@@ -22,7 +25,8 @@ final class ECSBGridLayer: ECGridLayer {
     /// each in front of the items layer's sublayers, so they end up in reverse item order, and drops
     /// item layers from the end when there are too many (REF-GRID-003); gives them their contents when
     /// the items changed (REF-GRID-014); then places the item layers row by row from the top
-    /// (REF-GRID-008) and lays out those that did not just get their contents; item layers whose
+    /// (REF-GRID-008), a row of fewer items than columns centered when `centerSingleRow` is set
+    /// (REF-SEARCH-010), and lays out those that did not just get their contents; item layers whose
     /// layout is disabled are skipped (research paper §5.9).
     override func _layoutItemLayers() {
         let bounds = itemsLayer.bounds
@@ -58,7 +62,16 @@ final class ECSBGridLayer: ECGridLayer {
             filled = layers
         }
         let cell = CGRect(x: 0, y: 0, width: CGFloat(columnWidth), height: CGFloat(rowHeight))
-        let firstX = layoutRTL ? bounds.maxX - CGFloat(columnWidth) / 2 : CGFloat(columnWidth) / 2
+        // REF-GRID-008: half the room the items leave, rounded half away from zero, less 1 when odd.
+        var centering: CGFloat = 0
+        if centerSingleRow, numberOfItems < UInt(columns) {
+            let half = (bounds.width - CGFloat(columnWidth * numberOfItems)) * 0.5
+            centering = half.rounded(.toNearestOrAwayFromZero)
+            if Int32(centering) & 1 != 0 {
+                centering -= 1
+            }
+        }
+        let firstX = layoutRTL ? bounds.maxX - (centering + CGFloat(columnWidth) / 2) : centering + CGFloat(columnWidth) / 2
         var position = CGPoint(x: firstX, y: CGFloat(Int(bounds.height)) - CGFloat(rowHeight) * 0.5)
         var column = 0
         for (index, element) in itemLayers.enumerated() {
