@@ -37,6 +37,8 @@ final class ECSBSpringboard: NSObject, ECPagerSource, ECSBGridActionHandling, EC
         _pager.gridActionHandler = self
         _pager.handler = handler
         _pager.eventHandler = _eventHandler
+        // The original sends it without checking; its handler is the controller, which has it.
+        layer.searchTextInputLayer()?.containerWindow = (handler as? ECSBDelegate)?.containerWindow?()
     }
 
     /// The grid action on the item at `index` of the sending page: the controller acts on the item's

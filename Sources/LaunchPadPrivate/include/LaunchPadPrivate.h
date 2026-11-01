@@ -191,9 +191,11 @@ extern NSString * const kCAFilterMultiplyColor;
 
 // A layer that shows the layer tree of a Core Animation context of another process. The search
 // field's _hostLayer is one; it hosts the text field the text input service draws (REF-SEARCH-001).
-// Its contextId comes with the service (sub-phase 3.3). A CALayer subclass exported by QuartzCore,
-// created with this class name on macOS 27.2 (26B123) and macOS 26.6.2 (25G83).
+// Its contextId is the one of the service's mini view window (REF-SEARCH-011, REF-DEV-034). A CALayer
+// subclass exported by QuartzCore, created with this class name on macOS 27.2 (26B123) and macOS
+// 26.6.2 (25G83); on 26.6.2 it showed the service's text field with the context id the service sent.
 @interface CALayerHost : CALayer
+@property uint32_t contextId;
 @end
 
 // The text input service (text-input, REF-SEARCH-011).
@@ -202,6 +204,12 @@ extern NSString * const kCAFilterMultiplyColor;
 // connection is resumed. Exported by libxpc; on macOS 26.6.2 (25G83) two UUIDs gave two processes of
 // this project's service (REF-DEV-034).
 extern void xpc_connection_set_instance(xpc_connection_t connection, const unsigned char *instance);
+
+// Moves a window of the connection's process or, for the Dock, of any process; the search field moves
+// the service's window to its host layer's place. Exported by CoreGraphics; on macOS 26.6.2 (25G83)
+// it returns 1000 from LaunchPad's process for the service's window, which does not move
+// (REF-DEV-034).
+extern CGError CGSMoveWindow(CGSConnectionID cid, CGSWindowID wid, const CGPoint *point);
 
 // The process serial number of a process, as the process manager keeps it (the search field's
 // _psn).

@@ -80,6 +80,16 @@ final class WALayerKitWindow: WAWindow {
                       width: rect.width, height: rect.height)
     }
 
+    /// A rectangle in the window's coordinates (origin at the bottom left) in global coordinates
+    /// (origin at the top left), the other way round from `-convertRectFromGlobal:` (research paper
+    /// §3.1).
+    @objc(convertRectToGlobal:)
+    func convertRectToGlobal(_ rect: CGRect) -> CGRect {
+        let frame = frame()
+        return CGRect(x: rect.minX + frame.minX, y: frame.minY + (frame.height - (rect.minY + rect.height)),
+                      width: rect.width, height: rect.height)
+    }
+
     /// A point in global coordinates in the window's coordinates, as the original converts it: one
     /// less in y than the rectangle conversion (REF-OVERLAY-009).
     @objc(convertPointFromGlobal:)

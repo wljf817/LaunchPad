@@ -23,6 +23,8 @@ class ECTextInputLayer: CALayer, ECEventHandling, ECEventHandlingDelegate {
     var _cancelSearchLayer: CALayer?
     var _placeholderLayer: ECTextLayer?
     var _type = 0
+    /// The service's mini view window, from `-registerContext:window:`.
+    var _windowID: UInt32 = 0
     var _psn = CPSProcessSerNum(hi: 0, lo: 0)
     /// The pid of the text input service; 0 until it is connected.
     var _pid: pid_t = 0
@@ -31,6 +33,8 @@ class ECTextInputLayer: CALayer, ECEventHandling, ECEventHandlingDelegate {
     var _placeholderAttributes: NSDictionary?
     var _connection_uuid: uuid_t = (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
     var _size = CGSize.zero
+    /// `_hostLayer`'s rectangle on screen as last sent to the service.
+    var _globalHostFrame = CGRect.zero
     var _margin: CGFloat = 0
     /// A `CTFont`, typed as an object as in the original.
     var _font: AnyObject?
@@ -184,22 +188,25 @@ class ECTextInputLayer: CALayer, ECEventHandling, ECEventHandlingDelegate {
         _cancelSearchLayer?.frame = CGRect(x: cancelX, y: cancelY, width: 14, height: 14)
     }
 
-    /// Lays the layers out again (REF-SEARCH-002); then the service's window follows (sub-phase 3.3).
-    /// Core Animation's setter is not isolated; the layer is used on the main thread only.
+    /// Lays the layers out again (REF-SEARCH-002); then the service's window follows. Core Animation's
+    /// setter is not isolated; the layer is used on the main thread only.
     nonisolated override var frame: CGRect {
         get { super.frame }
         set {
             super.frame = newValue
             let layer = UncheckedBox(self)
-            MainActor.assumeIsolated { layer.value.layout() }
-            // Sub-phase 3.3: -_synchronizeWindowLocation.
+            MainActor.assumeIsolated {
+                layer.value.layout()
+                layer.value._synchronizeWindowLocation()
+            }
         }
     }
 
-    /// The service's window follows (sub-phase 3.3).
+    /// The service's window follows.
     nonisolated override func layoutSublayers() {
         super.layoutSublayers()
-        // Sub-phase 3.3: -_synchronizeWindowLocation.
+        let layer = UncheckedBox(self)
+        MainActor.assumeIsolated { layer.value._synchronizeWindowLocation() }
     }
 
     // MARK: - Properties
@@ -372,6 +379,15 @@ class ECTextInputLayer: CALayer, ECEventHandling, ECEventHandlingDelegate {
             _fadeWhenNotActive = newValue
             opacity = 1
         }
+    }
+
+    @objc var containerWindow: WALayerKitWindow? {
+        get { _containerWindow }
+        set { _containerWindow = newValue }
+    }
+
+    @objc var windowID: UInt32 {
+        _windowID
     }
 
     @objc var psn: CPSProcessSerNum {
@@ -602,6 +618,40 @@ class ECTextInputLayer: CALayer, ECEventHandling, ECEventHandlingDelegate {
 
     @objc func invalidate() {
         _closeConnection()
+    }
+
+    /// The service's mini view window and context, from `DSXSetMiniView` (REF-DEV-034): `_hostLayer`
+    /// shows the context, and with one the service's window follows `_hostLayer`. The folder title's
+    /// `visibleBlock` gets YES or NO here (phase 5).
+    @objc(registerContext:window:)
+    func registerContext(_ contextID: UInt32, window: UInt32) {
+        _windowID = window
+        _hostLayer.contextId = contextID
+        if contextID != 0 {
+            _synchronizeWindowLocation()
+        }
+    }
+
+    /// `_hostLayer`'s rectangle on screen: in the root layer, then global (origin at the top left).
+    @objc func _getHostFrame() -> CGRect {
+        let frame = convert(_hostLayer.frame, to: nil)
+        return _containerWindow?.convertRectToGlobal(frame) ?? .zero
+    }
+
+    /// When connected with a context and `_hostLayer`'s rectangle on screen changed: keeps it, moves the
+    /// service's window there on the Dock's connection and sends `synchronizeWindowLocation` (the move
+    /// fails from this process, REF-DEV-034).
+    @objc func _synchronizeWindowLocation() {
+        guard _hasConnection, _hostLayer.contextId != 0 else { return }
+        let frame = _getHostFrame()
+        guard !frame.equalTo(_globalHostFrame) else { return }
+        _globalHostFrame = frame
+        CGSMoveWindow(Int32(bitPattern: dockGlobals.dockConnection), windowID, &_globalHostFrame.origin)
+        let message = xpc_dictionary_create(nil, nil, 0)
+        xpc_dictionary_set_string(message, "request", "synchronizeWindowLocation")
+        xpc_dictionary_set_double(message, "locx", _globalHostFrame.origin.x)
+        xpc_dictionary_set_double(message, "locy", _globalHostFrame.origin.y)
+        xpc_connection_send_message(_connection!, message)
     }
 }
 

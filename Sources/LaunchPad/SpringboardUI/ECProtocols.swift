@@ -133,6 +133,9 @@ protocol ECSBDelegate: NSObjectProtocol {
     @objc(didChangeToPage:)
     optional func didChangeToPage(_ page: AnyObject?)
 
+    /// The window the grid's layers are in; the main grid's search field converts to the screen with it.
+    @objc optional func containerWindow() -> WALayerKitWindow
+
     @objc optional func didBeginEditing()
     @objc optional func didEndEditing()
 

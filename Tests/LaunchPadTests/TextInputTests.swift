@@ -106,3 +106,51 @@ struct TextInputConnectionTests {
         field.textFieldActive = false
     }
 }
+
+@MainActor
+@Suite(.serialized)
+struct TextInputMiniViewTests {
+    @Test("DSXSetMiniView：按 pid 找到的搜索框记下窗口号，托管 layer 显示那个 context；没有搜索框的 pid 什么也不改")
+    func setMiniView() {
+        let field = makeTextInputField()
+        let other = makeTextInputField()
+        field._pid = 7201
+        other._pid = 7202
+        DSXSetMiniView(window: 0x1234, contextID: 0x5678, minimizedWindow: 0, pid: 7201)
+        #expect(field.windowID == 0x1234)
+        #expect(field._hostLayer.contextId == 0x5678)
+        DSXSetMiniView(window: 0x4321, contextID: 0x8765, minimizedWindow: 0, pid: 7203)
+        #expect(field.windowID == 0x1234)
+        #expect(field._hostLayer.contextId == 0x5678)
+        #expect(other.windowID == 0)
+        #expect(other._hostLayer.contextId == 0)
+        field._pid = 0
+        other._pid = 0
+    }
+
+    @Test("托管 layer 在屏幕上的矩形：先换到根 layer，再按网格窗口的位置换成全局坐标（原点在左上）")
+    func hostFrame() {
+        let display = CGMainDisplayID()
+        let window = WALayerKitWindow(frame: CGRect(x: 100, y: 50, width: 1536, height: 960),
+                                      connection: UInt32(bitPattern: CGSMainConnectionID()), display: display, tags: 0x400, level: 20)
+        let grid = CALayer()
+        let field = makeTextInputField()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        grid.frame = CGRect(x: 0, y: 104, width: 1536, height: 856)
+        field.frame = CGRect(x: 643, y: 806, width: 250, height: 25)
+        grid.addSublayer(field)
+        window.layer.addSublayer(grid)
+        CATransaction.commit()
+        field.containerWindow = window
+        // The field at the reference layout: REF-SEARCH-011 has (668, 25) with the window at (0, 0).
+        #expect(field._getHostFrame() == CGRect(x: 768, y: 75, width: 200, height: 25))
+        grid.removeFromSuperlayer()
+    }
+
+    @Test("主网格的搜索框用控制器的窗口换算")
+    func gridFieldWindow() {
+        let controller = Springboard()
+        #expect(controller.springboard.layer.searchTextInputLayer()?.containerWindow === controller.containerWindow())
+    }
+}
