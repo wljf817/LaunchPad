@@ -18,8 +18,8 @@ let usage = """
            vm-input up <x> <y>
            vm-input dragmove <x> <y>
            vm-input drag <x1> <y1> <x2> <y2> [<steps> <interval-ms> [<hold-ms>]]
-           vm-input key <keycode> [cmd|shift|opt|ctrl ...]
-           vm-input keys <interval-ms> <keycode>[+cmd|+shift|+opt|+ctrl ...] ...
+           vm-input key <keycode> [cmd|shift|opt|ctrl|fn ...]
+           vm-input keys <interval-ms> <keycode>[+cmd|+shift|+opt|+ctrl|+fn ...] ...
            vm-input wheel <x> <y> <dy> [<dx> [<count> <interval-ms>]] [shift]
            vm-input trackpad <x> <y> <sample-file> [<time-scale>]
     click: moves the pointer to (x, y) in global points (origin at the top left of the
@@ -50,6 +50,7 @@ let modifiers: [String: (flag: CGEventFlags, keyCode: CGKeyCode)] = [
     "shift": (.maskShift, 56),
     "opt": (.maskAlternate, 58),
     "ctrl": (.maskControl, 59),
+    "fn": (.maskSecondaryFn, 63),
 ]
 
 func fail(_ message: String) -> Never {
