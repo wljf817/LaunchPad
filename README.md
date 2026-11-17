@@ -1,6 +1,7 @@
 # LaunchPad
 
 An open-source clone of the macOS 15 Launchpad for macOS 26 and later.
+WIP
 
 ## Build
 
